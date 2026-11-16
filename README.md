@@ -190,3 +190,5 @@ MIT © 2026 Zhyllan Fyllah
 
 - Website: <https://zhyllanfyllah.my.id>
 - GitHub: [@jirankun](https://github.com/jirankun)
+
+  > semua kode buatan saya sendiri, kecuali readme ini, karena saya tidak ada waktu lebih untuk membuat readme dengan mengamati kode🙏
