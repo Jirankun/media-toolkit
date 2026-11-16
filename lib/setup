@@ -1,0 +1,218 @@
+#!/usr/bin/env bash
+
+_PM=''
+_PM_LABEL=''
+_PM_PACKAGES=()
+
+pm_detect() {
+    if command -v apt-get >/dev/null 2>&1; then
+        _PM=apt; _PM_LABEL='apt · Debian / Ubuntu / Mint'
+        _PM_PACKAGES=(ffmpeg imagemagick libjpeg-turbo-progs)
+    elif command -v dnf >/dev/null 2>&1; then
+        _PM=dnf; _PM_LABEL='dnf · Fedora / RHEL'
+        _PM_PACKAGES=(ffmpeg ImageMagick libjpeg-turbo-utils)
+    elif command -v pacman >/dev/null 2>&1; then
+        _PM=pacman; _PM_LABEL='pacman · Arch / Manjaro'
+        _PM_PACKAGES=(ffmpeg imagemagick libjpeg-turbo)
+    elif command -v zypper >/dev/null 2>&1; then
+        _PM=zypper; _PM_LABEL='zypper · openSUSE'
+        _PM_PACKAGES=(ffmpeg ImageMagick)
+    elif command -v apk >/dev/null 2>&1; then
+        _PM=apk; _PM_LABEL='apk · Alpine'
+        _PM_PACKAGES=(ffmpeg imagemagick)
+    elif command -v brew >/dev/null 2>&1; then
+        _PM=brew; _PM_LABEL='brew · macOS / Linuxbrew'
+        _PM_PACKAGES=(ffmpeg imagemagick jpeg-turbo)
+    else
+        _PM=''; _PM_LABEL='no supported package manager found'
+        _PM_PACKAGES=()
+    fi
+}
+
+pm_command() { # -> array in PM_CMD
+    PM_CMD=()
+    case $_PM in
+        apt)    PM_CMD=(apt-get install -y "${_PM_PACKAGES[@]}") ;;
+        dnf)    PM_CMD=(dnf install -y "${_PM_PACKAGES[@]}") ;;
+        pacman) PM_CMD=(pacman -S --needed --noconfirm "${_PM_PACKAGES[@]}") ;;
+        zypper) PM_CMD=(zypper --non-interactive install "${_PM_PACKAGES[@]}") ;;
+        apk)    PM_CMD=(apk add "${_PM_PACKAGES[@]}") ;;
+        brew)   PM_CMD=(brew install "${_PM_PACKAGES[@]}") ;;
+    esac
+    if (( EUID != 0 )) && [[ $_PM != brew && $_PM != '' ]]; then
+        if command -v sudo >/dev/null 2>&1; then
+            PM_CMD=(sudo "${PM_CMD[@]}")
+        else
+            PM_CMD=()
+        fi
+    fi
+}
+
+deps_status_view() {
+    pm_detect
+    pm_command
+    local tmp
+    tmp=$(mktemp "${TMPDIR:-/tmp}/mtk.XXXXXX") || return 1
+    {
+        printf 'Required tools\n'
+        printf '%s\n\n' "$(ui_fill 64 "$B_H")"
+        local cmd state
+        for cmd in ffmpeg ffprobe magick convert jpegtran untrunc; do
+            if command -v "$cmd" >/dev/null 2>&1; then
+                state="ok   $(command -v "$cmd")"
+            else
+                state="missing"
+            fi
+            printf '  %-10s %s\n' "$cmd" "$state"
+        done
+        printf '\n  detected package manager: %s\n' "${_PM_LABEL:-none}"
+        if (( ${#PM_CMD[@]} )); then
+            printf '  install command: %s\n' "${PM_CMD[*]}"
+        fi
+        printf '\n  Required: ffmpeg (video/audio), ImageMagick (images).\n'
+        printf '  Optional: jpegtran (JPEG repair), untrunc (MP4 repair).\n'
+        printf '\n  Press q to close.\n'
+    } > "$tmp"
+    ui_pager "Dependency status" "$tmp"
+    rm -f -- "$tmp"
+}
+
+install_dependencies() {
+    pm_detect
+    pm_command
+
+    if (( ${#_PM_PACKAGES[@]} == 0 )); then
+        ui_msg "Install dependencies" \
+            $'No supported package manager was detected.\n\nInstall these by hand:\n  ffmpeg · ImageMagick'
+        return 1
+    fi
+
+    local need=()
+    [[ -z $FFMPEG ]] && need+=(ffmpeg)
+    [[ -z $MAGICK ]] && need+=(ImageMagick)
+    if (( ${#need[@]} > 0 )); then
+        ui_confirm "Install dependencies" \
+            $'Missing: '"${need[*]}"$'\n\nPackage manager: '"$_PM_LABEL"$'\nCommand:\n  '"${PM_CMD[*]}"$'\n\nThis needs root (sudo). Continue?' || return 1
+    else
+        ui_confirm "Install dependencies" \
+            $'The essentials are already installed.\n\nRe-install/refresh via:\n  '"${PM_CMD[*]}"$' ?' || return 1
+    fi
+
+    if (( ${#PM_CMD[@]} == 0 )); then
+        ui_msg "Install dependencies" "sudo is required but was not found."
+        return 1
+    fi
+
+    log "--- INSTALL: ${PM_CMD[*]} ---"
+    ui_suspend
+    printf '\n%s\n\n  %s\n\n' "Installing media dependencies…" "${PM_CMD[*]}"
+    "${PM_CMD[@]}"
+    local rc=$?
+    log "--- INSTALL rc=$rc ---"
+
+    printf '\nFinished with exit code %d. Press enter to return.\n' "$rc"
+    read -r _ || true
+    ui_resume
+    detect_tools
+
+    if (( rc == 0 )); then
+        ui_msg "Install dependencies" $'Done.\n\n'$(tool_status_line)
+    else
+        ui_msg "Install dependencies" \
+            $'The installer exited with code '"$rc"$'.\n\nCheck the terminal output (e.g. missing repositories\nsuch as RPM Fusion on Fedora) and try again.'
+    fi
+}
+
+install_launcher() {
+    local dest="${XDG_DATA_HOME:-$HOME/.local/share}/media-toolkit"
+    local bin="${XDG_BIN_HOME:-$HOME/.local/bin}"
+    local entry="${MTK_ENTRY:-}"
+    if [[ -z $entry ]]; then
+        local cand
+        for cand in "$SCRIPT_DIR/media-toolkit" "$SCRIPT_DIR/media-toolkit.sh"; do
+            [[ -f $cand ]] && { entry=$cand; break; }
+        done
+    fi
+    local entry_name="${entry##*/}"
+
+    if [[ ! -f $entry ]]; then
+        ui_msg "Install launcher" "Entry script not found:"$'\n'"$entry"
+        return 1
+    fi
+
+    ui_confirm "Install launcher" \
+        $'Install the toolkit so you can run it as "mt" or "media-toolkit" from any folder.\n\nCode    : '"$dest"$'\nCommand : '"$bin/mt"$'\n          '"$bin/media-toolkit" || return 1
+
+    mkdir -p "$dest" "$bin" || { ui_msg "Install launcher" "Could not create $dest"; return 1; }
+
+    if [[ $(cd -- "$dest" && pwd -P) != $(cd -- "$SCRIPT_DIR" && pwd -P) ]]; then
+        rm -rf -- "$dest"
+        mkdir -p "$dest" || { ui_msg "Install launcher" "Could not create $dest"; return 1; }
+        cp -a -- "$entry" "$SCRIPT_DIR/lib" "$dest/" \
+            || { ui_msg "Install launcher" "Copy failed."; return 1; }
+        chmod +x "$dest/$entry_name"
+    fi
+
+    local name
+    for name in mt media-toolkit; do
+        printf '#!/usr/bin/env bash\nexec %q "$@"\n' "$dest/$entry_name" > "$bin/$name"
+        chmod +x "$bin/$name"
+    done
+
+    local path_note=''
+    case ":$PATH:" in
+        *":$bin:"*) path_note="$bin is already on your PATH." ;;
+        *)
+            path_note="Add this line to your shell config:"$'\n\n'"  export PATH=\"$bin:\$PATH\""
+            ;;
+    esac
+
+    ui_msg "Install launcher" \
+        $'Installed.\n\nRun it with:\n  mt\n  media-toolkit\n\n'"$path_note"
+}
+
+clean_outputs() {
+    ui_confirm "Clear outputs" \
+        $'Delete every generated file in:\n'"$OUT_ROOT"$'\n\nYour source media is never touched.' || return 1
+
+    local d
+    for d in "$OUT_CONVERT" "$OUT_COMPRESS" "$OUT_REPAIR" "$OUT_EXTRACT"; do
+        rm -rf -- "$d"
+    done
+    ensure_dirs
+    log "--- outputs cleared ---"
+    ui_msg "Clear outputs" "Output folders are empty again."
+}
+
+view_log() {
+    if [[ ! -s $LOG_FILE ]]; then
+        ui_msg "Log" "The log is still empty."
+        return 1
+    fi
+    local tmp
+    tmp=$(mktemp "${TMPDIR:-/tmp}/mtk.XXXXXX") || return 1
+    tail -n 800 -- "$LOG_FILE" > "$tmp"
+    ui_pager "Log · $LOG_FILE" "$tmp"
+    rm -f -- "$tmp"
+}
+
+setup_menu() {
+    ui_menu "Setup & dependencies" "Tools, launcher and maintenance" \
+        "deps|Install dependencies|ffmpeg · ImageMagick via your package manager" \
+        "status|Dependency status|what is installed and what is missing" \
+        "launcher|Install mtk launcher|run the toolkit from any folder" \
+        "paths|Output folders|where results are saved" \
+        "log|View log|last 800 lines of toolkit.log" \
+        "clean|Clear outputs|delete generated files only" || return 0
+
+    case $UI_VALUE in
+        deps)     install_dependencies ;;
+        status)   deps_status_view ;;
+        launcher) install_launcher ;;
+        paths)
+            ui_msg "Output folders" \
+                $'Source media : '"$WORK_DIR"$'\n\n'"  convert   $OUT_CONVERT"$'\n'"  compress  $OUT_COMPRESS"$'\n'"  repair    $OUT_REPAIR"$'\n'"  extract   $OUT_EXTRACT"$'\n\n'"Log         $LOG_FILE" ;;
+        log)      view_log ;;
+        clean)    clean_outputs ;;
+    esac
+}

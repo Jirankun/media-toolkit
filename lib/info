@@ -1,0 +1,213 @@
+#!/usr/bin/env bash
+
+_pf() { # <file> <format key>
+    ffprobe -v error -show_entries "format=$2" -of default=nw=1:nk=1 -- "$1" 2>/dev/null \
+        | head -n1 | tr -d '\r'
+}
+
+_ps() { # <file> <stream spec> <stream key>
+    ffprobe -v error -select_streams "$2" -show_entries "stream=$3" -of default=nw=1:nk=1 -- "$1" 2>/dev/null \
+        | head -n1 | tr -d '\r'
+}
+
+_rate() { # bits per second -> human
+    local b=${1:-0}
+    [[ $b =~ ^[0-9]+$ ]] || { printf 'n/a'; return; }
+    awk -v b="$b" 'BEGIN {
+        if (b >= 1000000) printf "%.1f Mb/s", b / 1000000;
+        else if (b >= 1000) printf "%.0f kb/s", b / 1000;
+        else printf "%d b/s", b;
+    }'
+}
+
+_fps() { # "30000/1001" -> "29.97"
+    local r=$1
+    awk -v r="$r" 'BEGIN {
+        if (r == "" || r == "0/0") { print "n/a"; exit }
+        split(r, p, "/");
+        if (p[2] == "" || p[2] == 0) { printf "%.2f", p[1]; exit }
+        printf "%.2f", p[1] / p[2];
+    }'
+}
+
+info_report_line() { # <label> <value>
+    printf '  %-11s %s\n' "$1" "$2" >> "$INFO_TMP"
+}
+
+describe_media() { # <file> -> appends to $INFO_TMP
+    local file=$1 name size type dur container overall
+    name=${file##*/}
+
+    printf '\n' >> "$INFO_TMP"
+    printf '  %s\n' "$name" >> "$INFO_TMP"
+    printf '  %s\n' "$(ui_fill 64 "$B_H")" >> "$INFO_TMP"
+
+    size=$(wc -c < "$file" 2>/dev/null | tr -d ' ')
+    type=$(file -b --mime-type -- "$file" 2>/dev/null || true)
+
+    local ext=${file##*.}
+    ext=${ext,,}
+    case $ext in
+        mp4|mov|mkv|avi|webm|flv|wmv|m4v|mpg|mpeg|3gp|ts|m2ts) type='video' ;;
+        mp3|wav|flac|ogg|oga|m4a|aac|wma|opus|aiff|alac)         type='audio' ;;
+        png|jpg|jpeg|webp|bmp|tiff|tif|gif|heic|avif)            type='image' ;;
+    esac
+    [[ -z $type ]] && type='unknown'
+
+    info_report_line "type" "$type"
+    info_report_line "size" "$(human_size "$size")"
+    info_report_line "path" "$file"
+
+    if [[ -z $FFPROBE ]]; then
+        info_report_line "details" "ffprobe not installed"
+        return 0
+    fi
+
+    dur=$(_pf "$file" duration)
+    container=$(_pf "$file" format_name)
+
+    if [[ $type == image ]]; then
+        local w h
+        w=$(_ps "$file" v:0 width)
+        h=$(_ps "$file" v:0 height)
+        [[ -n $w && -n $h ]] && info_report_line "resolution" "${w} x ${h}"
+        info_report_line "format" "${container:-unknown}"
+        return 0
+    fi
+
+    [[ -n $dur && $dur != N/A ]] && info_report_line "duration" "$(fmt_duration "$dur")"
+    info_report_line "container" "${container:-unknown}"
+
+    overall=$(_pf "$file" bit_rate)
+    [[ -n $overall && $overall != N/A ]] && info_report_line "bitrate" "$(_rate "$overall")"
+
+    local vcodec vw vh fps pix
+    vcodec=$(_ps "$file" v:0 codec_name)
+    if [[ -n $vcodec ]]; then
+        vw=$(_ps "$file" v:0 width)
+        vh=$(_ps "$file" v:0 height)
+        fps=$(_ps "$file" v:0 r_frame_rate)
+        pix=$(_ps "$file" v:0 pix_fmt)
+        local line="$vcodec"
+        [[ -n $vw && -n $vh ]] && line+=" · ${vw}x${vh}"
+        [[ -n $fps ]] && line+=" · $(_fps "$fps") fps"
+        [[ -n $pix ]] && line+=" · $pix"
+        info_report_line "video" "$line"
+    fi
+
+    local acodec ar ch
+    acodec=$(_ps "$file" a:0 codec_name)
+    if [[ -n $acodec ]]; then
+        ar=$(_ps "$file" a:0 sample_rate)
+        ch=$(_ps "$file" a:0 channels)
+        local line="$acodec"
+        [[ -n $ar ]] && line+=" · ${ar} Hz"
+        if [[ -n $ch ]]; then
+            case $ch in
+                1) line+=" · mono" ;;
+                2) line+=" · stereo" ;;
+                *) line+=" · ${ch} ch" ;;
+            esac
+        fi
+        info_report_line "audio" "$line"
+    fi
+
+    local subs
+    subs=$(ffprobe -v error -select_streams s -show_entries stream=index -of csv=p=0 -- "$file" 2>/dev/null | wc -l)
+    (( subs > 0 )) && info_report_line "subtitles" "$subs track(s)"
+    return 0
+}
+
+media_info_menu() {
+    local -a allf=() specs=()
+    local f
+    mapfile -t allf < <(list_all_media)
+    if (( ${#allf[@]} == 0 )); then
+        ui_msg "Media info" "No media files found in:"$'\n'"$WORK_DIR"
+        return 1
+    fi
+    for f in "${allf[@]}"; do
+        specs+=("$f|$f|$(human_size "$(wc -c < "$f")")")
+    done
+
+    ui_checklist "Media info" "Select files to inspect" "${specs[@]}" || return 1
+    local -a files=("${UI_CHECKED[@]}")
+
+    INFO_TMP=$(mktemp "${TMPDIR:-/tmp}/mtk.XXXXXX") || return 1
+    printf 'Folder: %s\n' "$WORK_DIR" > "$INFO_TMP"
+
+    for f in "${files[@]}"; do
+        describe_media "$WORK_DIR/$f"
+    done
+
+    ui_pager "Media info" "$INFO_TMP"
+    rm -f -- "$INFO_TMP"
+    unset INFO_TMP
+}
+
+about_view() {
+    local tmp
+    tmp=$(mktemp "${TMPDIR:-/tmp}/mtk.XXXXXX") || return 1
+    {
+        printf '%s %s\n' "$MTK_NAME" "$MTK_VERSION"
+        printf '%s\n\n' "$(ui_fill 64 "$B_H")"
+        printf '  A terminal toolkit for batch media work:\n'
+        printf '  convert, compress, repair, inspect and extract audio.\n\n'
+        printf '  %-9s %s\n' "Author"  "$MTK_AUTHOR"
+        printf '  %-9s %s\n' "Website" "$MTK_WEBSITE"
+        printf '  %-9s %s\n' "GitHub"  "$MTK_GITHUB"
+        printf '  %-9s %s\n' "License" "MIT"
+        printf '  %-9s %s\n' "Version" "$MTK_VERSION"
+        printf '  %-9s %s\n' "Engine"  "bash · ffmpeg · ImageMagick"
+        printf '\n  %-9s %s\n' "Source" "github.com/$MTK_REPO"
+        printf '  %-9s %s\n' "Install" "./install   (see README)"
+        printf '\n  Outputs and the log stay inside ./outputs of the\n'
+        printf '  folder where you run the toolkit.\n\n'
+        printf '  Press q to close.\n'
+    } > "$tmp"
+    ui_pager "About" "$tmp"
+    rm -f -- "$tmp"
+}
+
+system_info_view() {
+    local tmp
+    tmp=$(mktemp "${TMPDIR:-/tmp}/mtk.XXXXXX") || return 1
+    {
+        printf '%s %s\n' "$MTK_NAME" "$MTK_VERSION"
+        printf '%s\n' "$(ui_fill 64 "$B_H")"
+        printf '\n'
+        printf '  %-14s %s\n' "work folder" "$WORK_DIR"
+        printf '  %-14s %s\n' "outputs" "$OUT_ROOT"
+        printf '  %-14s %s\n' "log file" "$LOG_FILE"
+        printf '  %-14s %s\n' "toolkit" "$SCRIPT_DIR"
+        printf '  %-14s %s\n' "shell" "$BASH_VERSION"
+        printf '  %-14s %s\n' "terminal" "${TERM:-unknown}"
+        printf '\n  Tools\n\n'
+        printf '  %-14s %s\n' "ffmpeg" "${FFMPEG:-MISSING}"
+        printf '  %-14s %s\n' "ffprobe" "${FFPROBE:-MISSING}"
+        printf '  %-14s %s\n' "ImageMagick" "${MAGICK:-MISSING}"
+        if (( HAS_JPEGTRAN )); then
+            printf '  %-14s %s\n' "jpegtran" "$(command -v jpegtran)"
+        else
+            printf '  %-14s %s\n' "jpegtran" "optional, missing"
+        fi
+        if (( HAS_UNTRUNC )); then
+            printf '  %-14s %s\n' "untrunc" "$(command -v untrunc)"
+        else
+            printf '  %-14s %s\n' "untrunc" "optional, missing"
+        fi
+        if [[ -n $FFMPEG ]]; then
+            printf '\n  ffmpeg build\n\n'
+            ffmpeg -version 2>/dev/null | head -n1 | sed 's/^/  /'
+        fi
+        printf '\n  Output folders\n\n'
+        local d n
+        for d in "$OUT_CONVERT" "$OUT_COMPRESS" "$OUT_REPAIR" "$OUT_EXTRACT"; do
+            n=$(find "$d" -maxdepth 1 -type f 2>/dev/null | wc -l)
+            printf '  %-14s %s file(s)\n' "${d##*/}" "$n"
+        done
+        printf '\n  Press q to close. Log file: %s\n' "$LOG_FILE"
+    } > "$tmp"
+    ui_pager "System information" "$tmp"
+    rm -f -- "$tmp"
+}

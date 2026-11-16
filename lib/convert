@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+
+CONV_ARGS=()
+
+convert_args() { # <category> <target ext> -> CONV_ARGS
+    local cat=$1 dst=$2
+    CONV_ARGS=()
+    case $cat in
+        video)
+            case $dst in
+                webm)
+                    CONV_ARGS=(-map '0:v:0' -map '0:a:0?' -c:v libvpx-vp9 -crf 32 -b:v 0 -c:a libopus -b:a 96k) ;;
+                avi)
+                    CONV_ARGS=(-map '0:v:0' -map '0:a:0?' -c:v libx264 -preset medium -crf 23
+                        -pix_fmt yuv420p -c:a libmp3lame -b:a 192k) ;;
+                gif)
+                    CONV_ARGS=(-an -vf "fps=12,scale=480:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" -loop 0) ;;
+                mkv)
+                    CONV_ARGS=(-map '0:v:0' -map '0:a:0?' -c:v libx264 -preset medium -crf 22
+                        -pix_fmt yuv420p -c:a aac -b:a 192k) ;;
+                *)
+                    CONV_ARGS=(-map '0:v:0' -map '0:a:0?' -c:v libx264 -preset medium -crf 23
+                        -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart) ;;
+            esac ;;
+        audio)
+            case $dst in
+                mp3)  CONV_ARGS=(-vn -c:a libmp3lame -q:a 2) ;;
+                ogg)  CONV_ARGS=(-vn -c:a libvorbis -q:a 6) ;;
+                m4a|aac) CONV_ARGS=(-vn -c:a aac -b:a 192k) ;;
+                opus) CONV_ARGS=(-vn -c:a libopus -b:a 128k) ;;
+                wav)  CONV_ARGS=(-vn -c:a pcm_s16le) ;;
+                flac) CONV_ARGS=(-vn -c:a flac) ;;
+                *)    CONV_ARGS=(-vn) ;;
+            esac ;;
+    esac
+}
+
+image_convert() { # <in> <out> <target ext>
+    local infile=$1 outfile=$2 dst=$3
+    case $dst in
+        jpg|jpeg)
+            "$MAGICK" "$infile" -auto-orient -background white -alpha remove -alpha off \
+                -quality 92 "$outfile" ;;
+        webp)
+            "$MAGICK" "$infile" -auto-orient -quality 90 "$outfile" ;;
+        gif)
+            "$MAGICK" "$infile" -auto-orient -coalesce "$outfile" ;;
+        *)
+            "$MAGICK" "$infile" -auto-orient "$outfile" ;;
+    esac
+}
+
+convert_menu() {
+    require_ffmpeg || return 1
+    ui_menu "Convert" "Format conversion, batch friendly" \
+        "video|Video|mp4 · mkv · webm · mov · gif" \
+        "audio|Audio|mp3 · wav · flac · opus" \
+        "image|Image|png · jpg · webp · tiff" || return 1
+    convert_run "$UI_VALUE"
+}
+
+convert_run() {
+    local cat=$1
+    [[ $cat == image ]] && { require_magick || return 1; }
+
+    local -a exts=() targets=()
+    case $cat in
+        video) exts=("${VIDEO_EXTS[@]}"); targets=("${VIDEO_TARGETS[@]}") ;;
+        audio) exts=("${AUDIO_EXTS[@]}"); targets=("${AUDIO_TARGETS[@]}") ;;
+        image) exts=("${IMAGE_EXTS[@]}"); targets=("${IMAGE_TARGETS[@]}") ;;
+        *) return 1 ;;
+    esac
+
+    local -a rows=() specs=()
+    local ext n row
+    mapfile -t rows < <(present_formats "${exts[@]}")
+    if (( ${#rows[@]} == 0 )); then
+        ui_msg "Convert" "No $cat files found in:"$'\n'"$WORK_DIR"
+        return 1
+    fi
+    for row in "${rows[@]}"; do
+        ext=${row%% *}
+        n=${row#* }
+        specs+=("$ext|.$ext|$n file(s)")
+    done
+
+    ui_menu "Convert · source" "Pick the format to convert from" "${specs[@]}" || return 1
+    local src=$UI_VALUE
+
+    specs=()
+    local t
+    for t in "${targets[@]}"; do
+        [[ $t == "$src" ]] && continue
+        specs+=("$t|.$t|→ .$t")
+    done
+    if (( ${#specs[@]} == 0 )); then
+        ui_msg "Convert" "No other target format available."
+        return 1
+    fi
+    ui_menu "Convert · target" "Convert .$src files to" "${specs[@]}" || return 1
+    local dst=$UI_VALUE
+
+    local available
+    available=$(count_ext "$src")
+    ui_menu "Convert · files" ".$src → .$dst" \
+        "all|All .$src files|$available file(s)" \
+        "pick|Choose files|hand-pick what to convert" || return 1
+
+    local -a files=()
+    if [[ $UI_VALUE == all ]]; then
+        mapfile -t files < <(files_with_ext "$src")
+    else
+        local -a allf=()
+        local f
+        mapfile -t allf < <(files_with_ext "$src")
+        specs=()
+        for f in "${allf[@]}"; do
+            specs+=("$f|$f|$(human_size "$(wc -c < "$f")")")
+        done
+        ui_checklist "Convert · select files" "$((${#allf[@]})) .$src file(s) — space toggles" "${specs[@]}" || return 1
+        files=("${UI_CHECKED[@]}")
+    fi
+
+    if (( ${#files[@]} == 0 )); then
+        ui_msg "Convert" "Nothing selected."
+        return 1
+    fi
+
+    local preview=''
+    local i=1
+    local f
+    for f in "${files[@]}"; do
+        preview+="  ${f}  →  $(base_name "$f").${dst}"$'\n'
+        i=$(( i + 1 ))
+        (( i > 7 )) && { preview+="  … and $((${#files[@]} - 7)) more"$'\n'; break; }
+    done
+    ui_confirm "Convert · confirm" \
+        $'Convert '"${#files[@]}"$' file(s)\n\n'"$preview"$'\nOutput folder:\n'"$OUT_CONVERT" || return 1
+
+    local total=${#files[@]} stats ok fail
+    stats=$(mktemp "${TMPDIR:-/tmp}/mtk.XXXXXX") || return 1
+    log "--- CONVERT $src -> $dst ($total file(s)) ---"
+
+    (
+        local ok=0 fail=0 i=1 f base infile outfile
+        for f in "${files[@]}"; do
+            base=$(base_name "$f")
+            infile="$WORK_DIR/$f"
+            outfile=$(unique_path "$OUT_CONVERT" "$base" "$dst")
+            log "convert: $f -> $outfile"
+            if [[ $cat == image ]]; then
+                batch_step "$i" "$total" "convert $f" 0
+                if image_convert "$infile" "$outfile" "$dst" >> "$LOG_FILE" 2>&1 && [[ -s $outfile ]]; then
+                    ok=$(( ok + 1 ))
+                else
+                    fail=$(( fail + 1 )); rm -f -- "$outfile"
+                fi
+            else
+                convert_args "$cat" "$dst"
+                if ffmpeg_progress "$infile" "$i" "$total" "convert $f" "$outfile" -- "${CONV_ARGS[@]}" \
+                    && [[ -s $outfile ]]; then
+                    ok=$(( ok + 1 ))
+                else
+                    fail=$(( fail + 1 )); rm -f -- "$outfile"
+                fi
+            fi
+            i=$(( i + 1 ))
+        done
+        printf '%d %d\n' "$ok" "$fail" > "$stats"
+    ) | ui_progress "Converting .$src → .$dst"
+
+    read -r ok fail < "$stats"
+    rm -f -- "$stats"
+    log "--- CONVERT done: ok=$ok fail=$fail ---"
+
+    ui_msg "Convert finished" \
+        $'Success : '"$ok"$'\nFailed  : '"$fail"$'\n\nOutput:\n'"$OUT_CONVERT"
+}

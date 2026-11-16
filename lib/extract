@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+
+EXTRACT_ARGS=()
+EXTRACT_EXT=''
+
+extract_menu() {
+    require_ffmpeg || return 1
+
+    ui_menu "Extract audio" "Pull the audio track out of a video" \
+        "mp3|MP3|universal compatibility" \
+        "aac|AAC (M4A)|good quality, small" \
+        "flac|FLAC|lossless" \
+        "wav|WAV|uncompressed" \
+        "opus|Opus|best size per quality" || return 1
+
+    local fmt=$UI_VALUE
+    case $fmt in
+        mp3)  EXTRACT_EXT=mp3;  EXTRACT_ARGS=(-c:a libmp3lame -b:a 192k) ;;
+        aac)  EXTRACT_EXT=m4a;  EXTRACT_ARGS=(-c:a aac -b:a 192k) ;;
+        flac) EXTRACT_EXT=flac; EXTRACT_ARGS=(-c:a flac) ;;
+        wav)  EXTRACT_EXT=wav;  EXTRACT_ARGS=(-c:a pcm_s16le) ;;
+        opus) EXTRACT_EXT=opus; EXTRACT_ARGS=(-c:a libopus -b:a 128k) ;;
+        *) return 1 ;;
+    esac
+
+    local -a allf=() specs=()
+    local f
+    mapfile -t allf < <(list_media_files video)
+    if (( ${#allf[@]} == 0 )); then
+        ui_msg "Extract audio" "No video files found in:"$'\n'"$WORK_DIR"
+        return 1
+    fi
+    for f in "${allf[@]}"; do
+        local dur
+        dur=$(duration_of "$WORK_DIR/$f")
+        if [[ -n $dur ]]; then
+            specs+=("$f|$f|$(fmt_duration "$dur") · $(human_size "$(wc -c < "$f")")")
+        else
+            specs+=("$f|$f|$(human_size "$(wc -c < "$f")")")
+        fi
+    done
+
+    ui_checklist "Extract audio · files" "Output: .$EXTRACT_EXT — select videos" "${specs[@]}" || return 1
+    local -a files=("${UI_CHECKED[@]}")
+
+    ui_confirm "Extract audio · confirm" \
+        $'Extract audio from '"${#files[@]}"$' video(s)\n\nFormat : '"$fmt (.$EXTRACT_EXT)"$'\n\nOutput folder:\n'"$OUT_EXTRACT" || return 1
+
+    local total=${#files[@]} stats ok fail
+    stats=$(mktemp "${TMPDIR:-/tmp}/mtk.XXXXXX") || return 1
+    log "--- EXTRACT $fmt ($total file(s)) ---"
+
+    (
+        local ok=0 fail=0 i=1 f base infile outfile
+        for f in "${files[@]}"; do
+            base=$(base_name "$f")
+            infile="$WORK_DIR/$f"
+            outfile=$(unique_path "$OUT_EXTRACT" "$base" "$EXTRACT_EXT")
+            log "extract: $f -> $outfile"
+            if ffmpeg_progress "$infile" "$i" "$total" "extract $f" "$outfile" -- \
+                    -vn "${EXTRACT_ARGS[@]}" && [[ -s $outfile ]]; then
+                ok=$(( ok + 1 ))
+            else
+                fail=$(( fail + 1 )); rm -f -- "$outfile"
+            fi
+            i=$(( i + 1 ))
+        done
+        printf '%d %d\n' "$ok" "$fail" > "$stats"
+    ) | ui_progress "Extracting audio"
+
+    read -r ok fail < "$stats"
+    rm -f -- "$stats"
+    log "--- EXTRACT done: ok=$ok fail=$fail ---"
+
+    ui_msg "Extract finished" \
+        $'Success : '"$ok"$'\nFailed  : '"$fail"$'\n\nOutput:\n'"$OUT_EXTRACT"
+}

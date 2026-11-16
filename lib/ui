@@ -1,0 +1,912 @@
+#!/usr/bin/env bash
+
+UI_TTY=0
+UI_UTF8=0
+UI_256=0
+UI_KEY=''
+UI_VALUE=''
+UI_INDEX=-1
+UI_CHECKED=()
+UI_ROWS=24
+UI_COLS=80
+
+ui_theme() {
+    local colors charmap
+
+    [[ -t 0 && -t 1 ]] && UI_TTY=1
+
+    charmap=$(locale charmap 2>/dev/null || true)
+    [[ $charmap == *UTF-8* || $charmap == *utf8* ]] && UI_UTF8=1
+
+    colors=$(tput colors 2>/dev/null || true)
+    [[ $colors =~ ^[0-9]+$ ]] || colors=8
+    (( colors >= 256 )) && UI_256=1
+
+    UI_RESET=$'\e[0m'
+    if (( UI_256 )); then
+        UI_BASE=$'\e[48;5;232m\e[38;5;252m'
+        UI_PANEL=$'\e[48;5;235m'
+        UI_TXT=$'\e[38;5;252m\e[48;5;235m'
+        UI_DIM=$'\e[38;5;243m\e[48;5;235m'
+        UI_ACC=$'\e[1;38;5;141m\e[48;5;235m'
+        UI_BORD=$'\e[38;5;99m\e[48;5;235m'
+        UI_SEL=$'\e[1;38;5;231m\e[48;5;54m'
+        UI_SELD=$'\e[38;5;225m\e[48;5;54m'
+        UI_HINT=$'\e[1;38;5;183m\e[48;5;235m'
+        UI_OK=$'\e[38;5;114m\e[48;5;235m'
+        UI_ERR=$'\e[38;5;203m\e[48;5;235m'
+        UI_WARN=$'\e[38;5;179m\e[48;5;235m'
+        UI_FIELD=$'\e[48;5;238m\e[38;5;252m'
+        UI_FIELDD=$'\e[48;5;238m\e[38;5;243m'
+        UI_BARFILL=$'\e[38;5;141m\e[48;5;235m'
+        UI_BAREMPTY=$'\e[38;5;239m\e[48;5;235m'
+    else
+        UI_BASE=$'\e[40m\e[37m'
+        UI_PANEL=$'\e[40m'
+        UI_TXT=$'\e[37m\e[40m'
+        UI_DIM=$'\e[90m\e[40m'
+        UI_ACC=$'\e[1;35m\e[40m'
+        UI_BORD=$'\e[35m\e[40m'
+        UI_SEL=$'\e[1;30m\e[45m'
+        UI_SELD=$'\e[1;30m\e[45m'
+        UI_HINT=$'\e[1;35m\e[40m'
+        UI_OK=$'\e[32m\e[40m'
+        UI_ERR=$'\e[31m\e[40m'
+        UI_WARN=$'\e[33m\e[40m'
+        UI_FIELD=$'\e[37m\e[100m'
+        UI_FIELDD=$'\e[37m\e[100m'
+        UI_BARFILL=$'\e[35m\e[40m'
+        UI_BAREMPTY=$'\e[90m\e[40m'
+    fi
+
+    if (( UI_UTF8 )); then
+        B_TL='╭' B_TR='╮' B_BL='╰' B_BR='╯'
+        B_H='─' B_V='│' B_LT='├' B_RT='┤'
+        M_PTR='▸' C_ON='[x]' C_OFF='[ ]'
+        BAR_ON='█' BAR_OFF='░'
+        K_UP='↑' K_DN='↓' K_EN='↵'
+    else
+        B_TL='+' B_TR='+' B_BL='+' B_BR='+'
+        B_H='-' B_V='|' B_LT='+' B_RT='+'
+        M_PTR='>' C_ON='[x]' C_OFF='[ ]'
+        BAR_ON='#' BAR_OFF='-'
+        K_UP='^' K_DN='v' K_EN='enter'
+    fi
+    return 0
+}
+
+ui_size() {
+    UI_ROWS=$(tput lines 2>/dev/null || true)
+    UI_COLS=$(tput cols 2>/dev/null || true)
+    [[ $UI_ROWS =~ ^[0-9]+$ ]] || UI_ROWS=${LINES:-24}
+    [[ $UI_COLS =~ ^[0-9]+$ ]] || UI_COLS=${COLUMNS:-80}
+    (( UI_ROWS < 5 )) && UI_ROWS=24
+    (( UI_COLS < 20 )) && UI_COLS=80
+}
+
+ui_available() {
+    (( UI_TTY )) || return 1
+    [[ ${TERM:-dumb} != dumb ]] || return 1
+    ui_size
+    (( UI_COLS >= 52 && UI_ROWS >= 14 ))
+}
+
+ui_move()   { printf '\e[%d;%dH' "$(( $1 ))" "$(( $2 ))"; }
+ui_spaces() { local s; printf -v s '%*s' "${1:-0}" ''; printf '%s' "$s"; }
+ui_fill()   { local s; printf -v s '%*s' "${1:-0}" ''; printf '%s' "${s// /$2}"; }
+
+ui_row() {
+    local row=$1 col=$2 style=$3 text=$4 width=${5:-0} len
+    ui_move "$row" "$col"
+    if (( width > 0 )); then
+        len=${#text}
+        if (( len > width )); then text=${text:0:width}; len=$width; fi
+        printf '%s%s%s%s' "$style" "$text" "$(ui_spaces $(( width - len )))" "$UI_RESET"
+    else
+        printf '%s%s%s' "$style" "$text" "$UI_RESET"
+    fi
+}
+
+ui_button() {
+    ui_move "$1" "$2"
+    if (( $4 )); then printf '%s%s%s' "$UI_SEL" "$3" "$UI_RESET"
+    else printf '%s%s%s' "$UI_DIM" "$3" "$UI_RESET"; fi
+}
+
+ui_wrap() {
+    local width=$1 text=${2-} para line word
+    local -a words out=()
+    while IFS= read -r para; do
+        if [[ -z ${para//[[:space:]]/} ]]; then
+            out+=("")
+            continue
+        fi
+        line=''
+        read -r -a words <<< "$para"
+        for word in "${words[@]}"; do
+            while (( ${#word} > width )); do
+                [[ -n $line ]] && { out+=("$line"); line=''; }
+                out+=("${word:0:width}")
+                word=${word:width}
+            done
+            [[ -z $word ]] && continue
+            if [[ -z $line ]]; then
+                line=$word
+            elif (( ${#line} + 1 + ${#word} <= width )); then
+                line+=" $word"
+            else
+                out+=("$line")
+                line=$word
+            fi
+        done
+        [[ -n $line ]] && out+=("$line")
+    done <<< "$text"
+    (( ${#out[@]} )) || out=("")
+    printf '%s\n' "${out[@]}"
+}
+
+UI_ECHO_OFF=0
+
+ui_echo_off() {
+    (( UI_TTY )) || return 0
+    (( UI_ECHO_OFF )) && return 0
+    stty -echo 2>/dev/null
+    UI_ECHO_OFF=1
+}
+
+ui_echo_on() {
+    (( UI_TTY )) || return 0
+    (( UI_ECHO_OFF )) || return 0
+    stty echo 2>/dev/null
+    UI_ECHO_OFF=0
+}
+
+ui_screen_begin() {
+    ui_size
+    ui_echo_off
+    _L_PAINT_KEY=''
+    _L_ITEM_SIG=''
+    local pad r
+    printf '\e[0m%s\e[2J' "$UI_BASE"
+    printf -v pad '%*s' "$UI_COLS" ''
+    for (( r = 1; r < UI_ROWS; r++ )); do printf '%s\n' "$pad"; done
+    printf -v pad '%*s' "$(( UI_COLS - 1 ))" ''
+    printf '%s' "$pad"
+    ui_move 1 1
+    printf '\e[?25l'
+}
+
+ui_screen_end() {
+    _L_PAINT_KEY=''
+    _L_ITEM_SIG=''
+    printf '%s\e[?25h' "$UI_RESET"
+}
+
+ui_suspend() {
+    ui_echo_on
+    printf '\e[0m\e[?25h\e[2J\e[H'
+}
+
+ui_cleanup() {
+    (( UI_TTY )) || return 0
+    ui_echo_on
+    printf '\e[0m\e[?25h\e[2J\e[H'
+}
+
+ui_blank_panel() { # top left h w
+    local top=$1 left=$2 h=$3 w=$4 i blank
+    printf -v blank '%*s' "$(( w - 2 ))" ''
+    for (( i = 1; i < h - 1; i++ )); do
+        ui_move "$(( top + i ))" "$(( left + 1 ))"
+        printf '%s%s' "$UI_PANEL" "$blank"
+    done
+    printf '%s' "$UI_RESET"
+}
+
+ui_border() { # top left h w
+    local top=$1 left=$2 h=$3 w=$4 inner=$(( $4 - 2 )) i hline
+    hline=$(ui_fill "$inner" "$B_H")
+    ui_move "$top" "$left"
+    printf '%s%s%s%s%s' "$UI_BORD" "$B_TL" "$hline" "$B_TR" "$UI_RESET"
+    ui_move "$(( top + h - 1 ))" "$left"
+    printf '%s%s%s%s%s' "$UI_BORD" "$B_BL" "$hline" "$B_BR" "$UI_RESET"
+    for (( i = 1; i < h - 1; i++ )); do
+        ui_move "$(( top + i ))" "$left"
+        printf '%s%s%s' "$UI_BORD" "$B_V" "$UI_RESET"
+        ui_move "$(( top + i ))" "$(( left + w - 1 ))"
+        printf '%s%s%s' "$UI_BORD" "$B_V" "$UI_RESET"
+    done
+}
+
+ui_title() { # top left w title
+    local top=$1 left=$2 w=$3 title=$4
+    local inner=$(( w - 2 )) label=" $title " rest
+    (( ${#label} > inner - 2 )) && label=" ${title:0:$(( inner - 4 ))} "
+    rest=$(( inner - 1 - ${#label} ))
+    (( rest < 0 )) && rest=0
+    ui_move "$top" "$(( left + 1 ))"
+    printf '%s%s%s%s%s%s' "$UI_BORD" "$B_H" "$UI_ACC" "$label" "$UI_BORD" "$(ui_fill "$rest" "$B_H")"
+    printf '%s' "$UI_RESET"
+}
+
+ui_sep() { # row left w
+    local row=$1 left=$2 w=$3 inner=$(( $3 - 2 )) line
+    line=$(ui_fill "$inner" "$B_H")
+    ui_move "$row" "$left"
+    printf '%s%s%s%s%s' "$UI_BORD" "$B_LT" "$line" "$B_RT" "$UI_RESET"
+}
+
+ui_read_key() {
+    UI_KEY=''
+    local k='' rest='' c='' i
+    IFS= read -rsn1 k || return 1
+    case $k in
+        $'\e')
+            for i in 1 2 3 4 5; do
+                c=''
+                IFS= read -rsn1 -t 0.02 c || break
+                rest+=$c
+                [[ $c == [A-Za-z~] ]] && break
+            done
+            case $rest in
+                '[A'|'OA')                UI_KEY=up ;;
+                '[B'|'OB')                UI_KEY=down ;;
+                '[C'|'OC')                UI_KEY=right ;;
+                '[D'|'OD')                UI_KEY=left ;;
+                '[H'|'OH'|'[1~'|'[7~')    UI_KEY=home ;;
+                '[F'|'OF'|'[4~'|'[8~')    UI_KEY=end ;;
+                '[5~')                    UI_KEY=pgup ;;
+                '[6~')                    UI_KEY=pgdn ;;
+                '[Z')                     UI_KEY=backtab ;;
+                '')                       UI_KEY=esc ;;
+                *)                        UI_KEY=esc ;;
+            esac ;;
+        ''|$'\r'|$'\n') UI_KEY=enter ;;
+        ' ')      UI_KEY=space ;;
+        $'\t')    UI_KEY=tab ;;
+        $'\177'|$'\b') UI_KEY=back ;;
+        *)        UI_KEY=$k ;;
+    esac
+    return 0
+}
+
+_L_MODE=list
+_L_TITLE=''
+_L_SUB=''
+_L_LABELS=()
+_L_HINTS=()
+_L_ON=()
+_L_N=0
+_L_SEL=0
+_L_OFF=0
+_L_VIS=1
+_L_NOTICE=''
+_L_PAINT_KEY=''
+_L_ITEM_SIG=''
+
+_ui_list_paint() {
+    ui_size
+    local w=$(( UI_COLS - 6 )); (( w > 76 )) && w=76; (( w < 44 )) && w=44
+    local h=$(( _L_VIS + 6 ))
+    local maxh=$(( UI_ROWS - 2 )); (( h > maxh )) && h=$maxh
+    (( h < 9 )) && h=9
+    local shown=$(( h - 6 ))
+    local top=$(( (UI_ROWS - h) / 2 + 1 )); (( top < 1 )) && top=1
+    local left=$(( (UI_COLS - w) / 2 + 1 )); (( left < 1 )) && left=1
+    local inner=$(( w - 2 ))
+    local key="$_L_MODE|$_L_TITLE|$_L_SUB|$_L_N|$w|$h|$top|$left"
+    local sig="$_L_SEL|$_L_OFF|$_L_NOTICE"
+    local i idx
+
+    if [[ $key != $_L_PAINT_KEY ]]; then
+        ui_screen_begin
+        ui_blank_panel "$top" "$left" "$h" "$w"
+        ui_border "$top" "$left" "$h" "$w"
+        ui_title "$top" "$left" "$w" "$_L_TITLE"
+        ui_row $(( top + 1 )) $(( left + 2 )) "$UI_DIM" "$_L_SUB" $(( inner - 2 ))
+        ui_sep $(( top + 2 )) "$left" "$w"
+        ui_sep $(( top + 3 + shown )) "$left" "$w"
+        _L_PAINT_KEY=$key
+        _L_ITEM_SIG=''
+    fi
+
+    [[ $sig == $_L_ITEM_SIG ]] && return 0
+
+    for (( i = 0; i < shown; i++ )); do
+        idx=$(( _L_OFF + i ))
+        (( idx >= _L_N )) && break
+        _ui_list_item $(( top + 3 + i )) $(( left + 1 )) "$inner" "$idx"
+    done
+    _ui_list_footer $(( top + 4 + shown )) $(( left + 2 )) $(( inner - 2 ))
+    _L_ITEM_SIG=$sig
+}
+
+_ui_list_item() { # row col inner idx
+    local row=$1 col=$2 inner=$3 idx=$4
+    local label=${_L_LABELS[idx]} hint=${_L_HINTS[idx]-}
+    local style=$UI_TXT hintstyle=$UI_DIM
+    local marker=' ' check='' plain padlen hinttext='' fill
+
+    (( idx == _L_SEL )) && { style=$UI_SEL; hintstyle=$UI_SELD; marker=$M_PTR; }
+
+    if [[ $_L_MODE == check ]]; then
+        if (( ${_L_ON[idx]:-1} )); then check="${C_ON} "; else check="${C_OFF} "; fi
+    fi
+
+    plain="  ${marker} ${check}${label}"
+    if [[ -n $hint ]] && (( ${#plain} + ${#hint} + 2 <= inner )); then
+        hinttext=$hint
+    fi
+
+    (( ${#plain} > inner )) && plain=${plain:0:inner}
+    padlen=$(( inner - ${#plain} - ${#hinttext} ))
+    [[ -n $hinttext ]] && padlen=$(( padlen - 2 ))
+    (( padlen < 0 )) && padlen=0
+    printf -v fill '%*s' "$padlen" ''
+
+    ui_move "$row" "$col"
+    printf '%s%s%s' "$style" "$plain" "$fill"
+    if [[ -n $hinttext ]]; then
+        printf '%s%s  ' "$hintstyle" "$hinttext"
+    fi
+    printf '%s' "$UI_RESET"
+}
+
+_ui_list_footer() { # row col width
+    local row=$1 col=$2 width=$3
+    local left right style=$UI_HINT padlen fill
+
+    if [[ $_L_MODE == check ]]; then
+        local climit=$_L_N
+        (( climit > 9 )) && climit=9
+        left="$K_UP$K_DN move   space toggle   a all   $K_EN confirm   q back"
+        (( climit > 1 )) && left="$K_UP$K_DN move   space toggle   a all   1-$climit jump   $K_EN confirm   q back"
+    else
+        local limit=$_L_N
+        (( limit > 9 )) && limit=9
+        if (( limit > 1 )); then
+            left="$K_UP$K_DN move   $K_EN select   1-$limit jump   q back"
+        else
+            left="$K_UP$K_DN move   $K_EN select   q back"
+        fi
+    fi
+    right="$(( _L_SEL + 1 ))/$_L_N"
+
+    if [[ -n $_L_NOTICE ]]; then
+        left=$_L_NOTICE
+        style=$UI_ERR
+    fi
+
+    if (( ${#left} + ${#right} + 2 > width )); then
+        left="$K_UP$K_DN  $K_EN  q"
+    fi
+    padlen=$(( width - ${#left} - ${#right} ))
+    (( padlen < 1 )) && padlen=1
+    printf -v fill '%*s' "$(( padlen - 1 ))" ''
+
+    ui_move "$row" "$col"
+    printf '%s%s%s%s%s %s' "$style" "$left" "$fill" "$UI_DIM" "$right" "$UI_RESET"
+    _L_NOTICE=''
+}
+
+_ui_list_scroll() {
+    if (( _L_SEL < _L_OFF )); then
+        _L_OFF=$_L_SEL
+    fi
+    if (( _L_SEL >= _L_OFF + _L_VIS )); then
+        _L_OFF=$(( _L_SEL - _L_VIS + 1 ))
+    fi
+}
+
+ui_menu() {
+    local title=$1 subtitle=$2; shift 2
+    local -a vals=() labels=() hints=()
+    local spec v l h
+
+    for spec in "$@"; do
+        IFS='|' read -r v l h <<< "$spec"
+        vals+=("$v"); labels+=("$l"); hints+=("${h-}")
+    done
+    if (( ${#vals[@]} == 0 )); then
+        return 1
+    fi
+
+    if ! ui_available; then
+        local i pick idx
+        while :; do
+            printf '\n== %s ==\n' "$title"
+            [[ -n $subtitle ]] && printf '   %s\n' "$subtitle"
+            for (( i = 0; i < ${#vals[@]}; i++ )); do
+                printf '  %2d) %s\n' "$(( i + 1 ))" "${labels[i]}"
+            done
+            printf '   q) cancel\nChoice: '
+            IFS= read -r pick || return 1
+            [[ $pick == q || $pick == Q ]] && return 1
+            if [[ $pick =~ ^[0-9]+$ ]]; then
+                idx=$(( 10#$pick - 1 ))
+                if (( idx >= 0 && idx < ${#vals[@]} )); then
+                    UI_VALUE=${vals[idx]}
+                    UI_INDEX=$idx
+                    return 0
+                fi
+            fi
+            printf 'Invalid choice.\n'
+        done
+    fi
+
+    local n=${#vals[@]} cap k idx
+    _L_MODE=menu
+    _L_TITLE=$title
+    _L_SUB=$subtitle
+    _L_LABELS=("${labels[@]}")
+    _L_HINTS=("${hints[@]}")
+    _L_ON=()
+    _L_N=$n
+    _L_SEL=0
+    _L_OFF=0
+    _L_NOTICE=''
+    _L_PAINT_KEY=''
+    _L_ITEM_SIG=''
+    cap=$(( UI_ROWS - 9 )); (( cap < 3 )) && cap=3
+    _L_VIS=$n; (( _L_VIS > cap )) && _L_VIS=$cap
+
+    while :; do
+        _ui_list_paint
+        ui_read_key || return 1
+        k=$UI_KEY
+        case $k in
+            up|k)   (( _L_SEL > 0 )) && _L_SEL=$(( _L_SEL - 1 )) ;;
+            down|j) (( _L_SEL < n - 1 )) && _L_SEL=$(( _L_SEL + 1 )) ;;
+            pgup)   _L_SEL=$(( _L_SEL - _L_VIS )); (( _L_SEL < 0 )) && _L_SEL=0 ;;
+            pgdn)   _L_SEL=$(( _L_SEL + _L_VIS )); (( _L_SEL > n - 1 )) && _L_SEL=$(( n - 1 )) ;;
+            home)   _L_SEL=0 ;;
+            end)    _L_SEL=$(( n - 1 )) ;;
+            enter)
+                UI_VALUE=${vals[_L_SEL]}
+                UI_INDEX=$_L_SEL
+                ui_screen_end
+                return 0 ;;
+            esc|q)
+                ui_screen_end
+                return 1 ;;
+            [1-9])
+                idx=$(( k - 1 ))
+                if (( idx < n )); then
+                    UI_VALUE=${vals[idx]}
+                    UI_INDEX=$idx
+                    ui_screen_end
+                    return 0
+                fi ;;
+        esac
+        _ui_list_scroll
+    done
+}
+
+ui_checklist() {
+    local title=$1 subtitle=$2; shift 2
+    local -a vals=() labels=() hints=() on=()
+    local spec v l h st
+
+    for spec in "$@"; do
+        IFS='|' read -r v l h st <<< "$spec"
+        vals+=("$v"); labels+=("$l"); hints+=("${h-}"); on+=("${st:-1}")
+    done
+    if (( ${#vals[@]} == 0 )); then
+        return 1
+    fi
+
+    if ! ui_available; then
+        local -a sel=()
+        local i idx line tok all
+        for (( i = 0; i < ${#vals[@]}; i++ )); do sel[i]=${on[i]}; done
+        while :; do
+            printf '\n== %s ==\n' "$title"
+            for (( i = 0; i < ${#vals[@]}; i++ )); do
+                if (( sel[i] )); then
+                    printf '  %2d) [x] %s\n' "$(( i + 1 ))" "${labels[i]}"
+                else
+                    printf '  %2d) [ ] %s\n' "$(( i + 1 ))" "${labels[i]}"
+                fi
+            done
+            printf 'Toggle: numbers (e.g. 1 3) | a = all/none | Enter = accept | q = cancel\n> '
+            IFS= read -r line || return 1
+            [[ $line == q || $line == Q ]] && return 1
+            [[ -z ${line// /} ]] && break
+            if [[ $line == a || $line == A ]]; then
+                all=1
+                for (( i = 0; i < ${#vals[@]}; i++ )); do (( sel[i] )) || all=0; done
+                for (( i = 0; i < ${#vals[@]}; i++ )); do
+                    if (( all )); then sel[i]=0; else sel[i]=1; fi
+                done
+                continue
+            fi
+            for tok in $line; do
+                [[ $tok =~ ^[0-9]+$ ]] || continue
+                idx=$(( 10#$tok - 1 ))
+                (( idx >= 0 && idx < ${#vals[@]} )) || continue
+                if (( sel[idx] )); then sel[idx]=0; else sel[idx]=1; fi
+            done
+        done
+        UI_CHECKED=()
+        for (( i = 0; i < ${#vals[@]}; i++ )); do
+            (( sel[i] )) && UI_CHECKED+=("${vals[i]}")
+        done
+        (( ${#UI_CHECKED[@]} )) && return 0
+        printf 'Nothing selected.\n'
+        return 1
+    fi
+
+    local n=${#vals[@]} cap k idx
+    _L_MODE=check
+    _L_TITLE=$title
+    _L_SUB=$subtitle
+    _L_LABELS=("${labels[@]}")
+    _L_HINTS=("${hints[@]}")
+    _L_ON=("${on[@]}")
+    _L_N=$n
+    _L_SEL=0
+    _L_OFF=0
+    _L_NOTICE=''
+    _L_PAINT_KEY=''
+    _L_ITEM_SIG=''
+    cap=$(( UI_ROWS - 9 )); (( cap < 3 )) && cap=3
+    _L_VIS=$n; (( _L_VIS > cap )) && _L_VIS=$cap
+
+    while :; do
+        _ui_list_paint
+        ui_read_key || return 1
+        k=$UI_KEY
+        case $k in
+            up|k)   (( _L_SEL > 0 )) && _L_SEL=$(( _L_SEL - 1 )) ;;
+            down|j) (( _L_SEL < n - 1 )) && _L_SEL=$(( _L_SEL + 1 )) ;;
+            pgup)   _L_SEL=$(( _L_SEL - _L_VIS )); (( _L_SEL < 0 )) && _L_SEL=0 ;;
+            pgdn)   _L_SEL=$(( _L_SEL + _L_VIS )); (( _L_SEL > n - 1 )) && _L_SEL=$(( n - 1 )) ;;
+            home)   _L_SEL=0 ;;
+            end)    _L_SEL=$(( n - 1 )) ;;
+            space)
+                if (( ${_L_ON[_L_SEL]} )); then _L_ON[_L_SEL]=0; else _L_ON[_L_SEL]=1; fi
+                _L_ITEM_SIG='' ;;
+            a)
+                local all=1 i
+                for (( i = 0; i < n; i++ )); do (( _L_ON[i] )) || all=0; done
+                for (( i = 0; i < n; i++ )); do
+                    if (( all )); then _L_ON[i]=0; else _L_ON[i]=1; fi
+                done
+                _L_ITEM_SIG='' ;;
+            enter)
+                UI_CHECKED=()
+                for (( i = 0; i < n; i++ )); do
+                    (( _L_ON[i] )) && UI_CHECKED+=("${vals[i]}")
+                done
+                if (( ${#UI_CHECKED[@]} == 0 )); then
+                    _L_NOTICE='Select at least one item with space'
+                else
+                    ui_screen_end
+                    return 0
+                fi ;;
+            [1-9])
+                local j=$(( k - 1 ))
+                if (( j < n )); then
+                    _L_SEL=$j
+                    _L_ITEM_SIG=''
+                fi ;;
+            esc|q)
+                ui_screen_end
+                return 1 ;;
+        esac
+        _ui_list_scroll
+    done
+}
+
+ui_confirm() {
+    local title=$1 body=$2
+
+    if ! ui_available; then
+        printf '\n%s\n%s [y/N] ' "$title" "$body" >&2
+        local a
+        IFS= read -r a || return 1
+        [[ $a == [yY]* ]]
+        return
+    fi
+
+    local w=$(( UI_COLS - 8 )); (( w > 68 )) && w=68; (( w < 44 )) && w=44
+    local inner=$(( w - 4 ))
+    local -a lines=()
+    mapfile -t lines < <(ui_wrap "$inner" "$body")
+    local h=$(( ${#lines[@]} + 6 ))
+    local maxh=$(( UI_ROWS - 2 )); (( h > maxh )) && h=$maxh
+    local top=$(( (UI_ROWS - h) / 2 + 1 )); (( top < 1 )) && top=1
+    local left=$(( (UI_COLS - w) / 2 + 1 )); (( left < 1 )) && left=1
+    local focus=0 i row btn btns startcol
+
+    while :; do
+        ui_screen_begin
+        ui_blank_panel "$top" "$left" "$h" "$w"
+        ui_border "$top" "$left" "$h" "$w"
+        ui_title "$top" "$left" "$w" "$title"
+
+        for (( i = 0; i < ${#lines[@]}; i++ )); do
+            row=$(( top + 2 + i ))
+            (( row >= top + h - 4 )) && break
+            ui_row "$row" $(( left + 2 )) "$UI_TXT" "${lines[i]}" "$(( inner - 2 ))"
+        done
+
+        btns='[ Yes ]  [ No ]'
+        startcol=$(( left + (w - ${#btns}) / 2 ))
+        row=$(( top + h - 3 ))
+        if (( focus == 0 )); then
+            _ui_btnpair "$row" "$startcol" "$UI_SEL" '[ Yes ]' "$UI_DIM" '[ No ]'
+        else
+            _ui_btnpair "$row" "$startcol" "$UI_DIM" '[ Yes ]' "$UI_SEL" '[ No ]'
+        fi
+        ui_row $(( row + 1 )) $(( left + 2 )) "$UI_DIM" "$K_UP$K_DN/$K_EN choose   y / n   esc cancel" "$(( inner - 2 ))"
+
+        ui_read_key || return 1
+        case $UI_KEY in
+            left|right|tab|backtab) focus=$(( 1 - focus )) ;;
+            y|Y) ui_screen_end; return 0 ;;
+            n|N|esc|q) ui_screen_end; return 1 ;;
+            enter) if (( focus == 0 )); then ui_screen_end; return 0; else ui_screen_end; return 1; fi ;;
+        esac
+    done
+}
+
+_ui_btnpair() { # row col style1 label1 style2 label2
+    ui_move "$1" "$2"
+    printf '%s%s%s' "$3" "$4" "$UI_RESET"
+    printf '  '
+    printf '%s%s%s' "$5" "$6" "$UI_RESET"
+}
+
+ui_msg() {
+    local title=$1 body=$2
+
+    if ! ui_available; then
+        printf '\n== %s ==\n%s\n' "$title" "$body" >&2
+        return 0
+    fi
+
+    local w=$(( UI_COLS - 8 )); (( w > 68 )) && w=68; (( w < 44 )) && w=44
+    local inner=$(( w - 4 ))
+    local -a lines=()
+    mapfile -t lines < <(ui_wrap "$inner" "$body")
+    local h=$(( ${#lines[@]} + 5 ))
+    local maxh=$(( UI_ROWS - 2 ))
+
+    if (( h > maxh )); then
+        local tf; tf=$(mktemp "${TMPDIR:-/tmp}/mtk.XXXXXX")
+        printf '%s\n' "${lines[@]}" > "$tf"
+        ui_pager "$title" "$tf"
+        rm -f -- "$tf"
+        return 0
+    fi
+
+    local top=$(( (UI_ROWS - h) / 2 + 1 )); (( top < 1 )) && top=1
+    local left=$(( (UI_COLS - w) / 2 + 1 )); (( left < 1 )) && left=1
+    local i btnrow
+
+    ui_screen_begin
+    ui_blank_panel "$top" "$left" "$h" "$w"
+    ui_border "$top" "$left" "$h" "$w"
+    ui_title "$top" "$left" "$w" "$title"
+    for (( i = 0; i < ${#lines[@]}; i++ )); do
+        ui_row $(( top + 2 + i )) $(( left + 2 )) "$UI_TXT" "${lines[i]}" "$(( inner - 2 ))"
+    done
+    btnrow=$(( top + h - 3 ))
+    ui_button "$btnrow" $(( left + (w - 8) / 2 )) ' [ OK ] ' 1
+    ui_row $(( btnrow + 1 )) $(( left + 2 )) "$UI_DIM" "$K_EN / space to close" "$(( inner - 2 ))"
+
+    while :; do
+        ui_read_key || break
+        case $UI_KEY in
+            enter|space|esc|q) break ;;
+        esac
+    done
+    ui_screen_end
+    return 0
+}
+
+ui_input() {
+    local title=$1 prompt=$2 default=${3-}
+
+    if ! ui_available; then
+        printf '\n%s\n%s ' "$title" "$prompt" >&2
+        [[ -n $default ]] && printf '[%s] ' "$default" >&2
+        local ans
+        IFS= read -r ans || return 1
+        if [[ -z $ans ]]; then
+            if [[ -n $default ]]; then UI_VALUE=$default; return 0; fi
+            return 1
+        fi
+        UI_VALUE=$ans
+        return 0
+    fi
+
+    local w=$(( UI_COLS - 10 )); (( w > 64 )) && w=64; (( w < 44 )) && w=44
+    local inner=$(( w - 2 ))
+    local -a lines=()
+    mapfile -t lines < <(ui_wrap "$(( inner - 2 ))" "$prompt")
+    local h=$(( ${#lines[@]} + 6 ))
+    local maxh=$(( UI_ROWS - 2 )); (( h > maxh )) && h=$maxh
+    local top=$(( (UI_ROWS - h) / 2 + 1 )); (( top < 1 )) && top=1
+    local left=$(( (UI_COLS - w) / 2 + 1 )); (( left < 1 )) && left=1
+    local i fieldrow fw ans hint
+
+    fieldrow=$(( top + 3 + ${#lines[@]} ))
+    fw=$(( inner - 2 ))
+
+    ui_screen_begin
+    ui_blank_panel "$top" "$left" "$h" "$w"
+    ui_border "$top" "$left" "$h" "$w"
+    ui_title "$top" "$left" "$w" "$title"
+    for (( i = 0; i < ${#lines[@]}; i++ )); do
+        ui_row $(( top + 2 + i )) $(( left + 2 )) "$UI_TXT" "${lines[i]}" "$(( inner - 2 ))"
+    done
+
+    ui_move "$fieldrow" "$(( left + 2 ))"
+    printf '%s%s%s' "$UI_FIELD" "$(printf '%-*s' "$fw" '')" "$UI_RESET"
+
+    hint="enter = OK"
+    if [[ -n $default ]]; then hint+=" · empty = default ($default)"
+    else hint+=" · empty = cancel"; fi
+    ui_row $(( fieldrow + 1 )) $(( left + 2 )) "$UI_DIM" "$hint" "$(( inner - 2 ))"
+
+    ui_move "$fieldrow" "$(( left + 2 ))"
+    printf '%s\e[?25h' "$UI_FIELD"
+    ui_echo_on
+    if IFS= read -r ans; then
+        ui_echo_off
+        printf '\e[?25l%s' "$UI_RESET"
+    else
+        ui_echo_off
+        printf '\e[?25l%s' "$UI_RESET"
+        ui_screen_end
+        return 1
+    fi
+
+    if [[ -z $ans ]]; then
+        if [[ -n $default ]]; then ans=$default
+        else ui_screen_end; return 1; fi
+    fi
+    UI_VALUE=$ans
+    ui_screen_end
+    return 0
+}
+
+ui_pager() {
+    local title=$1 file=$2
+
+    if ! ui_available; then
+        cat -- "$file"
+        return 0
+    fi
+
+    local -a disp=()
+    local l maxw=0
+    ui_size
+    maxw=$(( UI_COLS - 10 ))
+    while IFS= read -r l; do
+        l=${l//$'\t'/    }
+        while (( ${#l} > maxw )); do
+            disp+=("${l:0:maxw}")
+            l=${l:maxw}
+        done
+        disp+=("$l")
+        (( ${#disp[@]} > 4000 )) && break
+    done < "$file"
+    (( ${#disp[@]} )) || disp=("(empty)")
+
+    local n=${#disp[@]} off=0
+    local w=$(( UI_COLS - 6 )); (( w > 96 )) && w=96; (( w < 44 )) && w=44
+    local h=$(( UI_ROWS - 2 )); (( h < 9 )) && h=9
+    local top=2 left=$(( (UI_COLS - w) / 2 + 1 )); (( left < 1 )) && left=1
+    local inner=$(( w - 2 )) shown=$(( h - 4 ))
+    local i pct frame='' sig=''
+
+    while :; do
+        local key="$w|$h|$top|$left|$n|$title"
+        if [[ $key != $frame ]]; then
+            ui_screen_begin
+            ui_blank_panel "$top" "$left" "$h" "$w"
+            ui_border "$top" "$left" "$h" "$w"
+            ui_title "$top" "$left" "$w" "$title"
+            ui_sep $(( top + 1 + shown )) "$left" "$w"
+            frame=$key
+            sig=''
+        fi
+        if [[ $sig != "$off" ]]; then
+            for (( i = 0; i < shown; i++ )); do
+                if (( off + i >= n )); then
+                    ui_row $(( top + 1 + i )) $(( left + 2 )) "$UI_TXT" "" "$(( inner - 2 ))"
+                else
+                    ui_row $(( top + 1 + i )) $(( left + 2 )) "$UI_TXT" "${disp[off + i]}" "$(( inner - 2 ))"
+                fi
+            done
+            if (( n > shown )); then
+                pct=$(( (off + shown) * 100 / n )); (( pct > 100 )) && pct=100
+                ui_row $(( top + 2 + shown )) $(( left + 2 )) "$UI_DIM" \
+                    "$K_UP$K_DN scroll   pgup/pgdn   home/end   q close${pct:+   $pct%}" "$(( inner - 2 ))"
+            else
+                ui_row $(( top + 2 + shown )) $(( left + 2 )) "$UI_DIM" "q close" "$(( inner - 2 ))"
+            fi
+            sig=$off
+        fi
+
+        ui_read_key || break
+        case $UI_KEY in
+            up|k)    (( off > 0 )) && off=$(( off - 1 )) ;;
+            down|j)  (( off < n - shown )) && off=$(( off + 1 )) ;;
+            pgup)    off=$(( off - shown )); (( off < 0 )) && off=0 ;;
+            pgdn)    off=$(( off + shown )); (( off > n - shown )) && off=$(( n - shown )); (( off < 0 )) && off=0 ;;
+            home)    off=0 ;;
+            end)     off=$(( n - shown )); (( off < 0 )) && off=0 ;;
+            esc|q|enter) break ;;
+        esac
+    done
+    ui_screen_end
+    return 0
+}
+
+_ui_progress_draw() { # top left inner pct label
+    local top=$1 left=$2 inner=$3 pct=$4 label=$5
+    local barw=$(( inner - 2 ))
+    local filled=$(( barw * pct / 100 ))
+    local fill empty
+
+    (( filled > barw )) && filled=$barw
+    (( filled < 0 )) && filled=0
+    fill=$(ui_fill "$filled" "$BAR_ON")
+    empty=$(ui_fill "$(( barw - filled ))" "$BAR_OFF")
+
+    ui_move "$(( top + 2 ))" "$(( left + 2 ))"
+    printf '%s%s%s%s%s' "$UI_BARFILL" "$fill" "$UI_BAREMPTY" "$empty" "$UI_RESET"
+
+    ui_move "$(( top + 3 ))" "$(( left + 2 ))"
+    printf '%s%s' "$UI_PANEL" "$(ui_spaces "$barw")"
+    ui_move "$(( top + 3 ))" "$(( left + 2 ))"
+    printf '%s%3d%%%s   %s%s%s' "$UI_ACC" "$pct" "$UI_RESET" "$UI_TXT" "${label:0:$(( barw - 8 ))}" "$UI_RESET"
+
+    ui_row $(( top + 4 )) $(( left + 2 )) "$UI_DIM" "please wait — ctrl+c to abort" "$barw"
+}
+
+ui_progress() {
+    local title=$1 pct=0 label='starting…' line rest
+
+    if ! ui_available; then
+        while IFS= read -r line; do
+            [[ $line == P\ * ]] || continue
+            rest=${line#P }
+            printf '  %s%% %s\n' "${rest%% *}" "${rest#* }"
+        done
+        return 0
+    fi
+
+    ui_size
+    local w=64 h=7
+    (( w > UI_COLS - 6 )) && w=$(( UI_COLS - 6 ))
+    (( w < 44 )) && w=44
+    local top=$(( (UI_ROWS - h) / 2 + 1 )); (( top < 1 )) && top=1
+    local left=$(( (UI_COLS - w) / 2 + 1 )); (( left < 1 )) && left=1
+    local inner=$(( w - 2 ))
+
+    ui_screen_begin
+    ui_blank_panel "$top" "$left" "$h" "$w"
+    ui_border "$top" "$left" "$h" "$w"
+    ui_title "$top" "$left" "$w" "$title"
+
+    while IFS= read -r line; do
+        [[ $line == P\ * ]] || continue
+        rest=${line#P }
+        pct=${rest%% *}
+        label=${rest#* }
+        [[ $label == "$pct" ]] && label=''
+        [[ $pct =~ ^[0-9]+$ ]] || pct=0
+        (( pct > 100 )) && pct=100
+        _ui_progress_draw "$top" "$left" "$inner" "$pct" "$label"
+    done
+
+    _ui_progress_draw "$top" "$left" "$inner" 100 "done"
+    sleep 0.2
+    ui_screen_end
+    return 0
+}

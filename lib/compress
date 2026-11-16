@@ -1,0 +1,148 @@
+#!/usr/bin/env bash
+
+compress_menu() {
+    require_ffmpeg || return 1
+    ui_menu "Compress" "Make files smaller with a quality target" \
+        "video|Video|re-encode to H.264 / AAC" \
+        "audio|Audio|re-encode to MP3" \
+        "image|Image|re-encode with quality setting" || return 1
+    compress_run "$UI_VALUE"
+}
+
+compress_run() {
+    local cat=$1
+    [[ $cat == image ]] && { require_magick || return 1; }
+
+    local -a allf=() specs=()
+    local f
+    mapfile -t allf < <(list_media_files "$cat")
+    if (( ${#allf[@]} == 0 )); then
+        ui_msg "Compress" "No $cat files found in:"$'\n'"$WORK_DIR"
+        return 1
+    fi
+    for f in "${allf[@]}"; do
+        specs+=("$f|$f|$(human_size "$(wc -c < "$f")")")
+    done
+
+    ui_checklist "Compress · files" "Select $cat files to compress" "${specs[@]}" || return 1
+    local -a files=("${UI_CHECKED[@]}")
+
+    local unit='%'
+    ui_menu "Compress · level" "How hard should it squeeze?" \
+        "75|Light|keep most of the quality" \
+        "50|Balanced|good size / quality trade-off" \
+        "35|Strong|small files, visible loss" \
+        "custom|Custom|enter your own value" || return 1
+
+    local level
+    if [[ $UI_VALUE == custom ]]; then
+        local prompt
+        case $cat in
+            video) prompt="Target size percentage (1-99)"$'\n\n'"50 ≈ half the size" ;;
+            audio) prompt="Target bitrate percentage (1-99)"$'\n\n'"output is MP3" ;;
+            image) prompt="Output quality (1-99)"$'\n\n'"higher = better looking, bigger file" ;;
+        esac
+        ui_input "Compress · custom level" "$prompt" "50" || return 1
+        level=$UI_VALUE
+        if [[ ! $level =~ ^[0-9]+$ ]]; then
+            ui_msg "Compress" "Please enter a whole number between 1 and 99."
+            return 1
+        fi
+        level=$(( 10#$level ))
+        if (( level < 1 || level > 99 )); then
+            ui_msg "Compress" "Value must be between 1 and 99."
+            return 1
+        fi
+    else
+        level=$UI_VALUE
+    fi
+
+    local note
+    case $cat in
+        video) note="Video → MP4 (H.264 + AAC)" ;;
+        audio) note="Audio → MP3" ;;
+        image) note="Image → same format, quality $level" ;;
+    esac
+
+    ui_confirm "Compress · confirm" \
+        $'Compress '"${#files[@]}"$' file(s)\n\n'"$note"$'\nLevel: '"$level"$'\n\nOutput folder:\n'"$OUT_COMPRESS" || return 1
+
+    local total=${#files[@]} stats ok fail
+    stats=$(mktemp "${TMPDIR:-/tmp}/mtk.XXXXXX") || return 1
+    log "--- COMPRESS $cat level=$level ($total file(s)) ---"
+
+    (
+        local ok=0 fail=0 i=1 f base ext infile outfile
+        for f in "${files[@]}"; do
+            base=$(base_name "$f")
+            ext=$(file_ext "$f")
+            infile="$WORK_DIR/$f"
+            outfile=''
+
+            if [[ $cat == image ]]; then
+                outfile=$(unique_path "$OUT_COMPRESS" "$base" "$ext")
+                batch_step "$i" "$total" "compress $f" 0
+                if "$MAGICK" "$infile" -quality "$level" "$outfile" >> "$LOG_FILE" 2>&1 && [[ -s $outfile ]]; then
+                    ok=$(( ok + 1 ))
+                else
+                    fail=$(( fail + 1 )); rm -f -- "$outfile"
+                fi
+            else
+                local orig_br=''
+                [[ -n $FFPROBE ]] && orig_br=$(ffprobe -v error -show_entries format=bit_rate \
+                    -of default=nw=1:nk=1 -- "$infile" 2>/dev/null | head -n1 | tr -d '\r')
+                [[ $orig_br =~ ^[0-9]+$ ]] || orig_br=''
+
+                local -a ffargs=()
+                if [[ $cat == video ]]; then
+                    outfile=$(unique_path "$OUT_COMPRESS" "$base" "mp4")
+                    if [[ -n $orig_br ]]; then
+                        local tbr=$(( orig_br * level / 100 ))
+                        local abr=$(( tbr / 10 ))
+                        (( abr > 192000 )) && abr=192000
+                        (( abr < 64000 )) && abr=64000
+                        local vbr=$(( tbr - abr ))
+                        (( vbr < 100000 )) && vbr=100000
+                        ffargs=(-map '0:v:0' -map '0:a:0?' -c:v libx264 -preset medium
+                            -b:v "$vbr" -maxrate "$(( vbr * 2 ))" -bufsize "$(( vbr * 4 ))"
+                            -pix_fmt yuv420p -c:a aac -b:a "$abr" -movflags +faststart)
+                    else
+                        local crf=$(( 51 - level * 40 / 100 ))
+                        (( crf < 20 )) && crf=20
+                        (( crf > 40 )) && crf=40
+                        ffargs=(-map '0:v:0' -map '0:a:0?' -c:v libx264 -preset medium
+                            -crf "$crf" -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart)
+                    fi
+                else
+                    outfile=$(unique_path "$OUT_COMPRESS" "$base" "mp3")
+                    local abr
+                    if [[ -n $orig_br ]]; then
+                        abr=$(( orig_br * level / 100 ))
+                    else
+                        abr=$(( 192000 * level / 100 ))
+                    fi
+                    (( abr < 64000 )) && abr=64000
+                    (( abr > 320000 )) && abr=320000
+                    ffargs=(-vn -c:a libmp3lame -b:a "$abr")
+                fi
+
+                log "compress: $f -> $outfile"
+                if ffmpeg_progress "$infile" "$i" "$total" "compress $f" "$outfile" -- "${ffargs[@]}" \
+                    && [[ -s $outfile ]]; then
+                    ok=$(( ok + 1 ))
+                else
+                    fail=$(( fail + 1 )); rm -f -- "$outfile"
+                fi
+            fi
+            i=$(( i + 1 ))
+        done
+        printf '%d %d\n' "$ok" "$fail" > "$stats"
+    ) | ui_progress "Compressing $cat files"
+
+    read -r ok fail < "$stats"
+    rm -f -- "$stats"
+    log "--- COMPRESS done: ok=$ok fail=$fail ---"
+
+    ui_msg "Compress finished" \
+        $'Success : '"$ok"$'\nFailed  : '"$fail"$'\n\nOutput:\n'"$OUT_COMPRESS"
+}

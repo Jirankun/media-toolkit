@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+if [ -z "${BASH_VERSION:-}" ]; then
+    if [ -n "${ZSH_VERSION:-}" ]; then
+        case ${ZSH_EVAL_CONTEXT:-} in
+            *:file*)
+                printf 'Media Toolkit must be run, not sourced:\n  bash %s\n' "$0" >&2
+                return 1 2>/dev/null || exit 1
+                ;;
+        esac
+    fi
+    if ! command -v bash >/dev/null 2>&1; then
+        printf 'Media Toolkit requires bash 4 or newer, but bash was not found.\n' >&2
+        exit 1
+    fi
+    exec bash "$0" "$@"
+fi
+
+set -o pipefail
+
+if (( BASH_VERSINFO[0] < 4 )); then
+    printf 'Media Toolkit needs bash 4 or newer (found %s).\n' "$BASH_VERSION" >&2
+    exit 1
+fi
+
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+MTK_ENTRY="$SCRIPT_DIR/$(basename -- "${BASH_SOURCE[0]}")"
+
+if [[ ! -d $SCRIPT_DIR/lib ]]; then
+    printf 'Cannot find %s/lib — keep the lib folder next to the script.\n' "$SCRIPT_DIR" >&2
+    exit 1
+fi
+
+shopt -s nullglob nocaseglob
+
+source "$SCRIPT_DIR/lib/ui"
+source "$SCRIPT_DIR/lib/core"
+source "$SCRIPT_DIR/lib/convert"
+source "$SCRIPT_DIR/lib/compress"
+source "$SCRIPT_DIR/lib/repair"
+source "$SCRIPT_DIR/lib/extract"
+source "$SCRIPT_DIR/lib/info"
+source "$SCRIPT_DIR/lib/setup"
+
+case ${1:-} in
+    -h|--help)
+        cat <<'EOF'
+Media Toolkit — batch media conversion, compression and repair.
+
+Usage:
+  media-toolkit              open the terminal UI
+  media-toolkit --version
+  media-toolkit --help
+
+Outputs are written to ./outputs next to the folder you run it from.
+Dependencies: bash 4+, ffmpeg, ImageMagick (install from the Setup screen).
+EOF
+        exit 0 ;;
+    -v|--version)
+        printf '%s %s\n' "$MTK_NAME" "$MTK_VERSION"
+        exit 0 ;;
+esac
+
+ui_theme
+trap 'ui_cleanup; exit 130' INT TERM
+
+main_menu() {
+    local sub
+    sub="source: $WORK_DIR"
+    if (( ${#MISSING_TOOLS[@]} > 0 )); then
+        sub="missing ${MISSING_TOOLS[*]} · open Setup & dependencies"
+    fi
+
+    ui_menu "$MTK_NAME  $MTK_VERSION" "$sub" \
+        "convert|Convert media|change container or codec" \
+        "compress|Compress media|smaller files with a target level" \
+        "repair|Repair media|fix broken containers and metadata" \
+        "extract|Extract audio|video → mp3 · aac · flac · wav · opus" \
+        "info|Media info|codec, resolution, duration" \
+        "setup|Setup & dependencies|install tools, launcher, logs" \
+        "sysinfo|System information|paths, tools, output folders" \
+        "about|About|author, license and links" \
+        "quit|Quit|leave the toolkit"
+}
+
+if ! ensure_dirs; then
+    printf 'Cannot create output folders under %s\n' "$WORK_DIR" >&2
+    exit 1
+fi
+
+detect_tools
+log "=== session start (v$MTK_VERSION, $WORK_DIR) ==="
+
+while :; do
+    detect_tools
+
+    if ! main_menu; then
+        break
+    fi
+
+    case $UI_VALUE in
+        convert) convert_menu ;;
+        compress) compress_menu ;;
+        repair) repair_menu ;;
+        extract) extract_menu ;;
+        info) media_info_menu ;;
+        setup) setup_menu ;;
+        sysinfo) system_info_view ;;
+        about) about_view ;;
+        quit) break ;;
+    esac
+done
+
+ui_cleanup
+log "=== session end ==="
+printf '\n%s %s — session ended\nLog: %s\n' "$MTK_NAME" "$MTK_VERSION" "$LOG_FILE"

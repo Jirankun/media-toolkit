@@ -1,0 +1,166 @@
+#!/usr/bin/env bash
+
+repair_menu() {
+    require_ffmpeg || return 1
+    ui_menu "Repair" "Recover playback and clean metadata" \
+        "video|Video|remux · re-encode · untrunc" \
+        "audio|Audio|remux · re-encode to MP3" \
+        "image|Image|strip metadata · JPEG optimize" || return 1
+    repair_run "$UI_VALUE"
+}
+
+repair_one() { # <in> <out> <action> <reference>
+    local infile=$1 outfile=$2 action=$3 ref=$4
+    case $action in
+        remux)
+            ffmpeg -hide_banner -loglevel error -nostdin -y -err_detect ignore_err \
+                -i "$infile" -map 0 -c copy "$outfile" ;;
+        reencode)
+            ffmpeg -hide_banner -loglevel error -nostdin -y -err_detect ignore_err \
+                -i "$infile" -map '0:v:0' -map '0:a:0?' -c:v libx264 -preset fast -crf 23 \
+                -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "$outfile" ;;
+        reencode_mp3)
+            ffmpeg -hide_banner -loglevel error -nostdin -y -err_detect ignore_err \
+                -i "$infile" -vn -map '0:a:0?' -c:a libmp3lame -q:a 2 "$outfile" ;;
+        untrunc)
+            untrunc -r "$ref" "$infile" >> "$LOG_FILE" 2>&1
+            local cand="${infile}.fixed.mp4"
+            if [[ -f $cand ]]; then
+                mv -f -- "$cand" "$outfile"
+                return 0
+            fi
+            return 1 ;;
+        strip)
+            "$MAGICK" "$infile" -strip "$outfile" ;;
+        jpegtran)
+            jpegtran -copy none -optimize "$infile" > "$outfile" 2>> "$LOG_FILE" ;;
+        *)
+            return 1 ;;
+    esac
+}
+
+repair_run() {
+    local cat=$1
+    [[ $cat == image ]] && { require_magick || return 1; }
+
+    local -a allf=() specs=()
+    local f
+    mapfile -t allf < <(list_media_files "$cat")
+    if (( ${#allf[@]} == 0 )); then
+        ui_msg "Repair" "No $cat files found in:"$'\n'"$WORK_DIR"
+        return 1
+    fi
+    for f in "${allf[@]}"; do
+        specs+=("$f|$f|$(human_size "$(wc -c < "$f")")")
+    done
+
+    ui_checklist "Repair · files" "Select $cat files to repair" "${specs[@]}" || return 1
+    local -a files=("${UI_CHECKED[@]}")
+
+    local has_mp4=0 has_jpg=0 ext
+    for f in "${files[@]}"; do
+        ext=$(file_ext "$f")
+        [[ $ext == mp4 || $ext == m4v ]] && has_mp4=1
+        [[ $ext == jpg || $ext == jpeg ]] && has_jpg=1
+    done
+
+    specs=()
+    case $cat in
+        video)
+            specs+=("remux|Remux|fast, lossless container fix")
+            specs+=("reencode|Re-encode|slow, rebuilds the streams")
+            (( HAS_UNTRUNC && has_mp4 )) && specs+=("untrunc|Untrunc MP4|needs a healthy reference file") ;;
+        audio)
+            specs+=("remux|Remux|fast, keeps the codec")
+            specs+=("reencode_mp3|Re-encode to MP3|rebuilds the audio stream") ;;
+        image)
+            specs+=("strip|Strip metadata|removes EXIF and profiles")
+            (( HAS_JPEGTRAN && has_jpg )) && specs+=("jpegtran|JPEG optimize|lossless recompression") ;;
+    esac
+
+    ui_menu "Repair · method" "Choose how to repair ${#files[@]} file(s)" "${specs[@]}" || return 1
+    local action=$UI_VALUE action_desc=''
+    local spec
+    for spec in "${specs[@]}"; do
+        [[ ${spec%%|*} == "$action" ]] && { action_desc=${spec#*|}; action_desc=${action_desc#*|}; }
+    done
+
+    local ref=''
+    if [[ $action == untrunc ]]; then
+        ui_input "Repair · reference" "Full path to a healthy MP4 from the same device" || return 1
+        ref=$UI_VALUE
+        if [[ ! -f $ref ]]; then
+            ui_msg "Repair" "Reference file not found:"$'\n'"$ref"
+            return 1
+        fi
+    fi
+
+    ui_confirm "Repair · confirm" \
+        $'Method : '"$action_desc"$'\nFiles  : '"${#files[@]}"$'\n\nOutput folder:\n'"$OUT_REPAIR" || return 1
+
+    local total=${#files[@]} stats ok fail skipped
+    stats=$(mktemp "${TMPDIR:-/tmp}/mtk.XXXXXX") || return 1
+    log "--- REPAIR $action ($total file(s)) ---"
+
+    (
+        local ok=0 fail=0 skipped=0 i=1 f base ext infile outfile
+        for f in "${files[@]}"; do
+            base=$(base_name "$f")
+            ext=$(file_ext "$f")
+            infile="$WORK_DIR/$f"
+
+            case $action in
+                untrunc)
+                    if [[ $ext != mp4 && $ext != m4v ]]; then
+                        skipped=$(( skipped + 1 ))
+                        batch_step "$i" "$total" "skip $f (not mp4)" 100
+                        i=$(( i + 1 )); continue
+                    fi
+                    outfile=$(unique_path "$OUT_REPAIR" "$base" "mp4") ;;
+                jpegtran)
+                    if [[ $ext != jpg && $ext != jpeg ]]; then
+                        skipped=$(( skipped + 1 ))
+                        batch_step "$i" "$total" "skip $f (not jpeg)" 100
+                        i=$(( i + 1 )); continue
+                    fi
+                    outfile=$(unique_path "$OUT_REPAIR" "$base" "$ext") ;;
+                reencode)     outfile=$(unique_path "$OUT_REPAIR" "$base" "mp4") ;;
+                reencode_mp3) outfile=$(unique_path "$OUT_REPAIR" "$base" "mp3") ;;
+                *)            outfile=$(unique_path "$OUT_REPAIR" "$base" "$ext") ;;
+            esac
+
+            log "repair ($action): $f -> $outfile"
+            if [[ $action == remux || $action == reencode || $action == reencode_mp3 ]]; then
+                local -a args=()
+                case $action in
+                    remux)        args=(-map 0 -c copy) ;;
+                    reencode)     args=(-map '0:v:0' -map '0:a:0?' -c:v libx264 -preset fast -crf 23
+                                      -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart) ;;
+                    reencode_mp3) args=(-vn -map '0:a:0?' -c:a libmp3lame -q:a 2) ;;
+                esac
+                if ffmpeg_progress "$infile" "$i" "$total" "repair $f" "$outfile" -- \
+                        "${args[@]}" && [[ -s $outfile ]]; then
+                    ok=$(( ok + 1 ))
+                else
+                    fail=$(( fail + 1 )); rm -f -- "$outfile"
+                fi
+            else
+                batch_step "$i" "$total" "repair $f" 0
+                if repair_one "$infile" "$outfile" "$action" "$ref" && [[ -s $outfile ]]; then
+                    ok=$(( ok + 1 ))
+                else
+                    fail=$(( fail + 1 )); rm -f -- "$outfile"
+                fi
+            fi
+            i=$(( i + 1 ))
+        done
+        printf '%d %d %d\n' "$ok" "$fail" "$skipped" > "$stats"
+    ) | ui_progress "Repairing files"
+
+    read -r ok fail skipped < "$stats"
+    rm -f -- "$stats"
+    log "--- REPAIR done: ok=$ok fail=$fail skipped=$skipped ---"
+
+    ui_msg "Repair finished" \
+        $'Success : '"$ok"$'\nFailed  : '"$fail"$'\nSkipped : '"$skipped"$'\n\nOutput:\n'"$OUT_REPAIR"
+}

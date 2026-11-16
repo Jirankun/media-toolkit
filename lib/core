@@ -1,0 +1,244 @@
+#!/usr/bin/env bash
+
+MTK_VERSION="2.1.0"
+MTK_NAME="Media Toolkit"
+MTK_AUTHOR="Zhyllan Fyllah"
+MTK_WEBSITE="https://zhyllanfyllah.my.id"
+MTK_GITHUB="jirankun"
+MTK_REPO="jirankun/media-toolkit"
+
+if [[ -z ${SCRIPT_DIR:-} ]]; then
+    SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+fi
+
+WORK_DIR="${MTK_WORK_DIR:-$PWD}"
+OUT_ROOT="$WORK_DIR/outputs"
+OUT_CONVERT="$OUT_ROOT/convert"
+OUT_COMPRESS="$OUT_ROOT/compress"
+OUT_REPAIR="$OUT_ROOT/repair"
+OUT_EXTRACT="$OUT_ROOT/extract"
+LOG_FILE="$OUT_ROOT/toolkit.log"
+
+VIDEO_EXTS=(mp4 mov avi mkv webm flv wmv m4v mpg mpeg 3gp ts m2ts)
+AUDIO_EXTS=(mp3 wav flac ogg oga m4a aac wma opus aiff alac)
+IMAGE_EXTS=(png jpg jpeg webp bmp tiff tif gif heic avif)
+VIDEO_TARGETS=(mp4 mkv webm mov avi gif)
+AUDIO_TARGETS=(mp3 wav ogg flac m4a aac opus)
+IMAGE_TARGETS=(png jpg webp bmp tiff gif)
+
+FFMPEG=''
+FFPROBE=''
+MAGICK=''
+HAS_JPEGTRAN=0
+HAS_UNTRUNC=0
+MISSING_TOOLS=()
+
+ensure_dirs() {
+    mkdir -p "$OUT_CONVERT" "$OUT_COMPRESS" "$OUT_REPAIR" "$OUT_EXTRACT" 2>/dev/null || return 1
+    return 0
+}
+
+log() {
+    printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG_FILE" 2>/dev/null
+}
+
+detect_tools() {
+    FFMPEG=$(command -v ffmpeg 2>/dev/null || true)
+    FFPROBE=$(command -v ffprobe 2>/dev/null || true)
+
+    MAGICK=''
+    if command -v magick >/dev/null 2>&1; then
+        MAGICK=magick
+    elif command -v convert >/dev/null 2>&1; then
+        MAGICK=convert
+    fi
+
+    HAS_JPEGTRAN=0
+    command -v jpegtran >/dev/null 2>&1 && HAS_JPEGTRAN=1
+    HAS_UNTRUNC=0
+    command -v untrunc >/dev/null 2>&1 && HAS_UNTRUNC=1
+
+    MISSING_TOOLS=()
+    [[ -z $FFMPEG ]] && MISSING_TOOLS+=(ffmpeg)
+    [[ -z $FFPROBE ]] && MISSING_TOOLS+=(ffprobe)
+    [[ -z $MAGICK ]] && MISSING_TOOLS+=(ImageMagick)
+}
+
+tool_status_line() {
+    local -a ok=()
+    [[ -n $FFMPEG ]] && ok+=(ffmpeg)
+    [[ -n $MAGICK ]] && ok+=(ImageMagick)
+    (( HAS_JPEGTRAN )) && ok+=(jpegtran)
+    (( HAS_UNTRUNC )) && ok+=(untrunc)
+    local line="${ok[*]:-none}"
+    if (( ${#MISSING_TOOLS[@]} > 0 )); then
+        line="missing: ${MISSING_TOOLS[*]}"
+    fi
+    printf '%s' "$line"
+}
+
+require_ffmpeg() {
+    [[ -n $FFMPEG ]] && return 0
+    ui_msg "Missing dependency" $'ffmpeg is required for this feature.\n\nOpen  Setup & dependencies  to install it.'
+    return 1
+}
+
+require_magick() {
+    [[ -n $MAGICK ]] && return 0
+    ui_msg "Missing dependency" $'ImageMagick is required for image operations.\n\nOpen  Setup & dependencies  to install it.'
+    return 1
+}
+
+files_with_ext() { # <ext> -> names in cwd
+    local ext=$1 f
+    local -a m=()
+    for f in *."$ext"; do
+        [[ -f $f ]] && m+=("$f")
+    done
+    (( ${#m[@]} )) || return 0
+    printf '%s\n' "${m[@]}" | sort -f
+}
+
+count_ext() { # <ext> -> number of files
+    local ext=$1 f n=0
+    for f in *."$ext"; do
+        [[ -f $f ]] && n=$(( n + 1 ))
+    done
+    printf '%s' "$n"
+}
+
+present_formats() { # <ext>... -> ext + count lines
+    local ext
+    for ext in "$@"; do
+        local n
+        n=$(count_ext "$ext")
+        (( n > 0 )) && printf '%s %s\n' "$ext" "$n"
+    done
+}
+
+list_media_files() { # video|audio|image -> names
+    local category=$1 ext f
+    local -a exts=() all=()
+    case $category in
+        video) exts=("${VIDEO_EXTS[@]}") ;;
+        audio) exts=("${AUDIO_EXTS[@]}") ;;
+        image) exts=("${IMAGE_EXTS[@]}") ;;
+        *)     return 0 ;;
+    esac
+    for ext in "${exts[@]}"; do
+        for f in *."$ext"; do
+            [[ -f $f ]] && all+=("$f")
+        done
+    done
+    (( ${#all[@]} )) || return 0
+    printf '%s\n' "${all[@]}" | sort -f -u
+}
+
+list_all_media() {
+    local -a all=()
+    local cat
+    for cat in video audio image; do
+        local -a m=()
+        mapfile -t m < <(list_media_files "$cat")
+        all+=("${m[@]}")
+    done
+    (( ${#all[@]} )) || return 0
+    printf '%s\n' "${all[@]}" | sort -f -u
+}
+
+unique_path() { # <dir> <base> <ext>
+    local dir=$1 name=$2 ext=$3
+    local cand="$dir/${name}.${ext}" i=1
+    while [[ -e $cand ]]; do
+        cand="$dir/${name}_${i}.${ext}"
+        i=$(( i + 1 ))
+    done
+    printf '%s' "$cand"
+}
+
+base_name() { # strip only the last extension
+    local f=$1
+    printf '%s' "${f%.*}"
+}
+
+file_ext() {
+    local f=$1
+    local e=${f##*.}
+    [[ $e == "$f" ]] && e=''
+    printf '%s' "${e,,}"
+}
+
+human_size() { # bytes
+    local b=${1:-0}
+    awk -v b="$b" 'BEGIN {
+        split("B KB MB GB TB", u, " ");
+        i = 1;
+        while (b >= 1024 && i < 5) { b /= 1024; i++ }
+        if (i == 1) printf "%.0f %s", b, u[i];
+        else printf "%.1f %s", b, u[i];
+    }'
+}
+
+fmt_duration() { # seconds (may be decimal)
+    awk -v s="${1:-0}" 'BEGIN {
+        if (s < 0 || s != s) s = 0;
+        h = int(s / 3600); m = int((s % 3600) / 60); sec = int(s % 60);
+        if (h > 0) printf "%d:%02d:%02d", h, m, sec;
+        else printf "%d:%02d", m, sec;
+    }'
+}
+
+duration_of() { # <file> -> seconds ("" when unknown)
+    [[ -n $FFPROBE ]] || return 0
+    local d
+    d=$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 -- "$1" 2>/dev/null | head -n1 | tr -d '\r')
+    [[ $d =~ ^[0-9]+(\.[0-9]+)?$ ]] && printf '%s' "$d"
+}
+
+ffmpeg_progress() {
+    local infile=$1 idx=$2 total=$3 label=$4 outfile=$5
+    shift 5
+    [[ $1 == -- ]] && shift
+
+    local dur_us=0 sec out_us fp pct last=-1 rc pid prog
+    sec=$(duration_of "$infile")
+    [[ -n $sec ]] && dur_us=$(awk -v d="$sec" 'BEGIN { printf "%.0f", d * 1000000 }')
+
+    prog=$(mktemp "${TMPDIR:-/tmp}/mtk.XXXXXX") || return 1
+
+    ffmpeg -hide_banner -loglevel error -nostdin -y -nostats -err_detect ignore_err \
+        -progress "$prog" -i "$infile" "$@" "$outfile" >> "$LOG_FILE" 2>&1 &
+    pid=$!
+
+    while kill -0 "$pid" 2>/dev/null; do
+        out_us=0
+        if [[ -s $prog ]]; then
+            local raw
+            raw=$(grep -oE '(out_time_us|out_time_ms)=[0-9]+' "$prog" 2>/dev/null | tail -n1 | cut -d= -f2)
+            [[ $raw =~ ^[0-9]+$ ]] && out_us=$raw
+        fi
+        fp=0
+        if (( dur_us > 0 )); then
+            fp=$(( out_us * 100 / dur_us ))
+            (( fp > 100 )) && fp=100
+        fi
+        pct=$(( ((idx - 1) * 100 + fp) / total ))
+        if (( pct != last )); then
+            printf 'P %d %s\n' "$pct" "$label ($idx/$total)"
+            last=$pct
+        fi
+        sleep 0.2
+    done
+    wait "$pid"
+    rc=$?
+    rm -f -- "$prog"
+    return $rc
+}
+
+batch_step() { # <index> <total> <label> <percent within file>
+    local idx=$1 total=$2 label=$3 fp=${4:-0}
+    local pct
+    pct=$(( ((idx - 1) * 100 + fp) / total ))
+    (( pct > 100 )) && pct=100
+    printf 'P %d %s\n' "$pct" "$label ($idx/$total)"
+}
