@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+# Zhyllan Fyllah | MIT License
+
 UI_TTY=0
 UI_UTF8=0
 UI_256=0

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+# Zhyllan Fyllah | MIT License
+
 _PM=''
 _PM_LABEL=''
 _PM_PACKAGES=()

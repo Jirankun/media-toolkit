@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+# Zhyllan Fyllah | MIT License
+
 compress_menu() {
     require_ffmpeg || return 1
     ui_menu "Compress" "Make files smaller with a quality target" \

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+# Zhyllan Fyllah | MIT License
+
 repair_menu() {
     require_ffmpeg || return 1
     ui_menu "Repair" "Recover playback and clean metadata" \

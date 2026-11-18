@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+# Zhyllan Fyllah | MIT License
+
 CONV_ARGS=()
 
 convert_args() { # <category> <target ext> -> CONV_ARGS

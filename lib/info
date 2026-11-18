@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+# Zhyllan Fyllah | MIT License
+
 _pf() { # <file> <format key>
     ffprobe -v error -show_entries "format=$2" -of default=nw=1:nk=1 -- "$1" 2>/dev/null \
         | head -n1 | tr -d '\r'

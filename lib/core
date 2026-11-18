@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 
-MTK_VERSION="2.1.0"
+# Zhyllan Fyllah | MIT License
+
+
+MTK_VERSION="0.1.0"
 MTK_NAME="Media Toolkit"
 MTK_AUTHOR="Zhyllan Fyllah"
 MTK_WEBSITE="https://zhyllanfyllah.my.id"
-MTK_GITHUB="jirankun"
-MTK_REPO="jirankun/media-toolkit"
+MTK_GITHUB="Jirankun"
+MTK_REPO="Jirankun/media-toolkit"
 
 if [[ -z ${SCRIPT_DIR:-} ]]; then
     SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)

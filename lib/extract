@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+# Zhyllan Fyllah | MIT License
+
 EXTRACT_ARGS=()
 EXTRACT_EXT=''
 

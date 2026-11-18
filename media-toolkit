@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+
+# Zhyllan Fyllah | MIT License
+
 if [ -z "${BASH_VERSION:-}" ]; then
     if [ -n "${ZSH_VERSION:-}" ]; then
         case ${ZSH_EVAL_CONTEXT:-} in

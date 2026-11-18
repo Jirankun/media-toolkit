@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+
+# Zhyllan Fyllah | MIT License
+
 set -eu
 
 REPO="${MTK_REPO:-jirankun/media-toolkit}"
