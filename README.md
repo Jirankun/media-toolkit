@@ -66,7 +66,7 @@ dependensi** dan toolkit akan menggunakan pengelola paket Anda.
 ### Instalasi cepat
 
 ```sh
-curl -fsSL http://zhyllanfyllah.is-a.dev/media-toolkit/install.sh | bash
+curl -fsSL https://zhyllanfyllah.is-a.dev/media-toolkit/install.sh | bash
 ```
 
 Setelah itu, buka terminal baru dan jalankan:

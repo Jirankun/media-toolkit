@@ -1,82 +1,121 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="id">
-	<head>
-		<meta charset="utf-8">
-		<meta name="viewport" content="width=device-width, initial-scale=1">
-		<title>Media Toolkit</title>
-	</head>
-	<body>
-		<h1>Media Toolkit</h1>
-		<hr>
-		<section>
-			<h2>1. Apa itu Media Toolkit?</h2>
-			<p>Media Toolkit adalah aplikasi CLI untuk mengonversi format dan memperbaiki berkas media dengan cepat. Semua proses berjalan secara lokal di perangkat Anda.</p>
-		</section>
-		<br>
-		<section>
-			<h2>2. Sistem operasi yang didukung</h2>
-			<p><b>Saat ini Media Toolkit ditujukan untuk Linux.</b>
-			Dukungan Windows, Termux, dan macOS masih diupayakan.</p>
-		</section>
-		<br>
-		<section>
-			<h2>3. Instalasi</h2>
-			<p>Instalasi dapat dijalankan dengan mengetik 1 baris perintah berikut :</p>
-			<textarea id="install-cmd" rows="1" readonly style="width: 100%; max-width: 490px; resize: both; padding: 8px; box-sizing: border-box;">curl -fsSL https://zhyllanfyllah.is-a.dev/media-toolkit/install.sh | bash</textarea>
-			<p id="install-status" aria-live="polite">Klik untuk menyalin</p>
-		</section>
-		<br>
-		<section>
-			<h2>4. Menjalankan</h2>
-			<p>Untuk menjalankan anda hanya mengetik :</p>
-			<textarea id="run-cmd" rows="1" readonly style="width: 100%; max-width: 490px; resize: both; padding: 8px; box-sizing: border-box;">mt</textarea>
-			<p id="run-status" aria-live="polite">Klik untuk menyalin</p>
-		</section>
-		<br>
-		<section>
-			<h2>5. Uninstall</h2>
-			<p>Jika anda tidak menginginkan penggunaan tools ini lagi, anda dapat menjalankan perintah berikut :</p>
-			<textarea id="uninstall-cmd" rows="2" readonly style="width: 100%; max-width: 490px; resize: both; padding: 8px; box-sizing: border-box;">curl -fsSL https://zhyllanfyllah.is-a.dev/media-toolkit/install.sh | bash -s -- --uninstall</textarea>
-			<p id="uninstall-status" aria-live="polite">Klik untuk menyalin</p>
-		</section>
-		<br>
-		<section>
-			<h2>6. Dependensi yang dibutuhkan</h2>
-			<p>CLI ini membutuhkan beberapa paket dependensi, jadi anda dapat mengikuti instruksi dan alur yang sudah disediakan di CLI untuk menginstall-nya.</p>
-		</section>
-		<br>
-		<section>
-			<h2>7. Status proyek</h2>
-			<p>Proyek ini masih dikembangkan dan menggunakan lisensi <a href="LICENSE.md">MIT</a>.</p>
-			<p>Untuk berkontribusi, silakan ajukan pull request di <a href="https://github.com/jirankun/media-toolkit" target="_blank" rel="noopener">https://github.com/jirankun/media-toolkit</a>,
-				Saya senang jika ada orang yang mau membantu dalam pengembangan script ini, apalagi orang indonesia.</p>
-		</section>
-		<img src="https://cdn.zhyllanfyllah.my.id/cdn/public/assets/bangga-indo/dark/bangga-buatan-indonesia.svg" alt="Bangga Buatan Indonesia" width="120">
-		<hr>
-		<footer>MIT &copy;2026 <a href="https://zhyllanfyllah.my.id" target="_blank" rel="noopener">Zhyllan Fyllah</a>
-			| Jirankun</footer>
-		<script>
-			const commandControls = [
-				['install-cmd', 'install-status'],
-				['run-cmd', 'run-status'],
-				['uninstall-cmd', 'uninstall-status']
-			];
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Media Toolkit</title>
+    </head>
+    <body>
+        <h1>Media Toolkit</h1>
+        <hr />
+        <section>
+            <h2>1. Apa itu Media Toolkit?</h2>
+            <p>
+                Media Toolkit adalah aplikasi CLI untuk mengonversi format dan memperbaiki berkas media dengan cepat.
+                Semua proses berjalan secara lokal di perangkat Anda.
+            </p>
+        </section>
+        <br />
+        <section>
+            <h2>2. Sistem operasi yang didukung</h2>
+            <p>
+                <b>Saat ini Media Toolkit ditujukan untuk Linux.</b> Dukungan Windows, Termux, dan macOS masih
+                diupayakan.
+            </p>
+        </section>
+        <br />
+        <section>
+            <h2>3. Instalasi</h2>
+            <p>Instalasi dapat dijalankan dengan mengetik 1 baris perintah berikut :</p>
+            <textarea
+                id="install-cmd"
+                rows="2"
+                readonly
+                style="width: 100%; max-width: 490px; resize: both; padding: 8px; box-sizing: border-box"
+            >
+curl -fsSL https://zhyllanfyllah.is-a.dev/media-toolkit/install.sh | bash</textarea
+            >
+            <p id="install-status" aria-live="polite">Klik untuk menyalin</p>
+        </section>
+        <br />
+        <section>
+            <h2>4. Menjalankan</h2>
+            <p>Untuk menjalankan anda hanya mengetik :</p>
+            <textarea
+                id="run-cmd"
+                rows="1"
+                readonly
+                style="width: 100%; max-width: 490px; resize: both; padding: 8px; box-sizing: border-box"
+            >
+mt</textarea
+            >
+            <p id="run-status" aria-live="polite">Klik untuk menyalin</p>
+        </section>
+        <br />
+        <section>
+            <h2>5. Uninstall</h2>
+            <p>Jika anda tidak menginginkan penggunaan tools ini lagi, anda dapat menjalankan perintah berikut :</p>
+            <textarea
+                id="uninstall-cmd"
+                rows="2"
+                readonly
+                style="width: 100%; max-width: 490px; resize: both; padding: 8px; box-sizing: border-box"
+            >
+curl -fsSL https://zhyllanfyllah.is-a.dev/media-toolkit/install.sh | bash -s -- --uninstall</textarea
+            >
+            <p id="uninstall-status" aria-live="polite">Klik untuk menyalin</p>
+        </section>
+        <br />
+        <section>
+            <h2>6. Dependensi yang dibutuhkan</h2>
+            <p>
+                CLI ini membutuhkan beberapa paket dependensi, jadi anda dapat mengikuti instruksi dan alur yang sudah
+                disediakan di CLI untuk menginstall-nya.
+            </p>
+        </section>
+        <br />
+        <section>
+            <h2>7. Status proyek</h2>
+            <p>Proyek ini masih dikembangkan dan menggunakan lisensi <a href="LICENSE.md">MIT</a>.</p>
+            <p>
+                Untuk berkontribusi, silakan ajukan pull request di
+                <a href="https://github.com/jirankun/media-toolkit" target="_blank" rel="noopener"
+                    >https://github.com/jirankun/media-toolkit</a
+                >, Saya senang jika ada orang yang mau membantu dalam pengembangan script ini, apalagi orang indonesia.
+            </p>
+        </section>
+        <img
+            src="https://cdn.zhyllanfyllah.my.id/cdn/public/assets/bangga-indo/dark/bangga-buatan-indonesia.svg"
+            alt="Bangga Buatan Indonesia"
+            width="120"
+        />
+        <hr />
+        <footer>
+            MIT &copy;2026 <a href="https://zhyllanfyllah.my.id" target="_blank" rel="noopener">Zhyllan Fyllah</a> |
+            Jirankun
+        </footer>
+        <script>
+            const commandControls = [
+                ["install-cmd", "install-status"],
+                ["run-cmd", "run-status"],
+                ["uninstall-cmd", "uninstall-status"],
+            ];
 
-			for (const [commandId, statusId] of commandControls) {
-				const cmd = document.getElementById(commandId);
-				const status = document.getElementById(statusId);
+            for (const [commandId, statusId] of commandControls) {
+                const cmd = document.getElementById(commandId);
+                const status = document.getElementById(statusId);
 
-				cmd.addEventListener('click', async () => {
-					try {
-						await navigator.clipboard.writeText(cmd.value);
-						status.textContent = 'Disalin';
-					} catch {
-						cmd.select();
-						cmd.setSelectionRange(0, cmd.value.length);
-						status.textContent = 'Pilih dan salin perintah secara manual.';
-					}
-				});
-		}
-		</script>
-	</body>
+                cmd.addEventListener("click", async () => {
+                    try {
+                        await navigator.clipboard.writeText(cmd.value);
+                        status.textContent = "Disalin";
+                    } catch {
+                        cmd.select();
+                        cmd.setSelectionRange(0, cmd.value.length);
+                        status.textContent = "Pilih dan salin perintah secara manual.";
+                    }
+                });
+            }
+        </script>
+    </body>
 </html>
