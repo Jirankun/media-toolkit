@@ -32,26 +32,26 @@ bash + ANSI TUI with a black and purple theme — no `dialog`, no ncurses.
 
 ## Requirements
 
-| Requirement | Notes |
-|---|---|
-| bash 4+ | present on virtually every distribution |
-| ffmpeg + ffprobe | required for video and audio |
-| ImageMagick (`magick` / `convert`) | required for images |
-| jpegtran, untrunc | optional, used by specific repair modes |
+| Requirement                        | Notes                                   |
+| ---------------------------------- | --------------------------------------- |
+| bash 4+                            | present on virtually every distribution |
+| ffmpeg + ffprobe                   | required for video and audio            |
+| ImageMagick (`magick` / `convert`) | required for images                     |
+| jpegtran, untrunc                  | optional, used by specific repair modes |
 
 Both the installer and the in-app **Setup & dependencies → Install dependencies**
 fill in what is missing automatically. The command is chosen from the detected
 package manager:
 
-| Distribution family | Package manager | Packages installed |
-|---|---|---|
-| Debian, Ubuntu, Mint, Pop!_OS, Kali | `apt-get` | `ffmpeg imagemagick libjpeg-turbo-progs` |
-| Fedora, RHEL, CentOS Stream, Rocky, Alma | `dnf` | `ffmpeg ImageMagick libjpeg-turbo-utils` |
-| Arch, Manjaro, EndeavourOS, CachyOS, Garuda | `pacman` | `ffmpeg imagemagick libjpeg-turbo` |
-| openSUSE Leap / Tumbleweed | `zypper` | `ffmpeg ImageMagick` |
-| Alpine | `apk` | `ffmpeg imagemagick` |
-| macOS, Linuxbrew | `brew` | `ffmpeg imagemagick jpeg-turbo` |
-| anything else | — | install ffmpeg + ImageMagick manually |
+| Distribution family                         | Package manager | Packages installed                       |
+| ------------------------------------------- | --------------- | ---------------------------------------- |
+| Debian, Ubuntu, Mint, Pop!\_OS, Kali        | `apt-get`       | `ffmpeg imagemagick libjpeg-turbo-progs` |
+| Fedora, RHEL, CentOS Stream, Rocky, Alma    | `dnf`           | `ffmpeg ImageMagick libjpeg-turbo-utils` |
+| Arch, Manjaro, EndeavourOS, CachyOS, Garuda | `pacman`        | `ffmpeg imagemagick libjpeg-turbo`       |
+| openSUSE Leap / Tumbleweed                  | `zypper`        | `ffmpeg ImageMagick`                     |
+| Alpine                                      | `apk`           | `ffmpeg imagemagick`                     |
+| macOS, Linuxbrew                            | `brew`          | `ffmpeg imagemagick jpeg-turbo`          |
+| anything else                               | —               | install ffmpeg + ImageMagick manually    |
 
 On Fedora and RHEL, `ffmpeg` comes from RPM Fusion; enable it first if the
 package cannot be found. `jpegtran` and `untrunc` are optional and are used only
@@ -65,7 +65,7 @@ the toolkit will use your package manager.
 ### Quick install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/jirankun/media-toolkit/main/install | bash
+curl -fsSL https://raw.githubusercontent.com/jirankun/media-toolkit/main/install.sh | bash
 ```
 
 Open a new terminal afterwards and run:
@@ -121,12 +121,12 @@ sudo ./install --prefix /usr/local/share/media-toolkit \
 The installer reads your login shell from `$SHELL` and appends a single
 `PATH` block at the end of that shell's rc file:
 
-| Shell | File |
-|---|---|
-| zsh | `~/.zshrc` |
-| bash | `~/.bashrc` |
-| fish | `~/.config/fish/config.fish` |
-| anything else | `~/.profile` |
+| Shell         | File                         |
+| ------------- | ---------------------------- |
+| zsh           | `~/.zshrc`                   |
+| bash          | `~/.bashrc`                  |
+| fish          | `~/.config/fish/config.fish` |
+| anything else | `~/.profile`                 |
 
 The block is idempotent (added once) and is removed again by `--uninstall`.
 Use `--no-path` to manage `PATH` yourself.

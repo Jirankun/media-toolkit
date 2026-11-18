@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<title>Media Toolkit</title>
+	</head>
+	<body>
+		<h1>Media Toolkit</h1>
+
+		<section>
+			<h3>apa itu media toolkit?</h3>
+			<p>Media toolkit adalah : sebuah CLI yang berfungsi untuk melakukan konversi format dan perbaikan file secara cepat dengan CLI (Command Line Interface), tanpa menggunakan internet (semuanya berjalan didalam perangkat anda)</p>
+		</section>
+		<br>
+		<section>
+			<h3>Support untuk sistem operasi apa saja?</h3>
+			<p>Tools ini support untuk Linux, Tetapi akan diusakan support untuk Windows, Termux, dan MacOS</p>
+		</section>
+		<br>
+		<h3>Jalankan perintah berikut untuk menginstall :</h3>
+		<textarea id="cmd" rows="1" readonly style="width: 100%; max-width: 450px; resize: both; padding: 8px; box-sizing: border-box;">curl -fsSL http://zhyllanfyllah.is-a.dev/media-toolkit/install.sh | bash</textarea>
+		<p id="status">Click box to Copy</p>
+		<br>
+		<section>
+			<h3>Status Proyek</h3>
+			<p>Proyek ini <b>masih dalam tahap awal</b>,dan mungkin masih terus di kembangkan, proyek ini menggunakan lisensi <a href="http://zhyllanfyllah.is-a.dev/media-toolkit/LICENSE.md">MIT</a></p>
+		</section>
+
+		<script>
+			const cmd = document.getElementById('cmd');
+			const status = document.getElementById('status');
+			const text = cmd.value;
+
+			async function copyText(str) {
+				try {
+					if (navigator.clipboard && window.isSecureContext) {
+						await navigator.clipboard.writeText(str);
+						return true;
+					}
+				} catch (e) {}
+
+				cmd.select();
+				cmd.setSelectionRange(0, str.length);
+				let ok = false;
+				try { ok = document.execCommand('copy'); } catch (e) {}
+				return ok;
+			}
+
+			cmd.addEventListener('click', async () => {
+				const ok = await copyText(text);
+				status.textContent = ok ? '✓ copied!' : 'Copy Error, Please manual select and manual copy';
+				if (ok && navigator.vibrate) navigator.vibrate(20);
+				setTimeout(() => status.textContent = '', 1500);
+			});
+		</script>
+	</body>
+</html>
