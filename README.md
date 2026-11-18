@@ -1,8 +1,9 @@
 # Media Toolkit
 
-A terminal toolkit for batch media work: format conversion, compression, repair,
-audio extraction, and media inspection. The interface is a self-contained
-bash + ANSI TUI with a black and purple theme — no `dialog`, no ncurses.
+Toolkit terminal untuk mengolah media secara batch: konversi format, kompresi,
+perbaikan, ekstraksi audio, dan pemeriksaan media. Antarmukanya adalah TUI
+mandiri berbasis bash dan ANSI, bertema hitam dan ungu — tanpa `dialog` maupun
+ncurses.
 
 ```
 ╭─ Media Toolkit  2.1.0 ───────────────────────╮
@@ -16,67 +17,67 @@ bash + ANSI TUI with a black and purple theme — no `dialog`, no ncurses.
 │    Setup              install tools          │
 │    About              author & license       │
 ├──────────────────────────────────────────────┤
-│ ↑↓ move   ↵ select   1-9 jump   q quit      │
+│ ↑↓ move   ↵ select   1-9 jump   q quit       │
 ╰──────────────────────────────────────────────╯
 ```
 
-## Features
+## Fitur
 
-- **Convert** — video (mp4, mkv, webm, mov, avi, gif), audio (mp3, wav, flac, ogg, m4a, aac, opus), images (png, jpg, webp, bmp, tiff, gif).
-- **Compress** — Light / Balanced / Strong presets or your own percentage; video to H.264 + AAC, audio to MP3, images with a quality setting.
-- **Repair** — fast remux, full re-encode, untrunc for MP4, metadata stripping, and lossless jpegtran.
-- **Extract audio** — pull the audio track out of a video to mp3, m4a/aac, flac, wav, or opus.
-- **Media info** — duration, size, container, bitrate, codecs, resolution, fps, and audio layout.
-- **Setup & dependencies** — detect `apt/dnf/pacman/zypper/apk/brew`, install ffmpeg + ImageMagick, and install the `mt` launcher.
-- **About** — author, license, and project links.
+- **Konversi** — video (mp4, mkv, webm, mov, avi, gif), audio (mp3, wav, flac, ogg, m4a, aac, opus), dan gambar (png, jpg, webp, bmp, tiff, gif).
+- **Kompresi** — preset Ringan / Seimbang / Kuat atau persentase pilihan Anda; video ke H.264 + AAC, audio ke MP3, dan gambar dengan pengaturan kualitas.
+- **Perbaikan** — remux cepat, enkode ulang penuh, untrunc untuk MP4, penghapusan metadata, dan jpegtran tanpa kehilangan kualitas.
+- **Ekstraksi audio** — mengambil trek audio dari video ke mp3, m4a/aac, flac, wav, atau opus.
+- **Info media** — durasi, ukuran, kontainer, bitrate, kodek, resolusi, fps, dan tata letak audio.
+- **Pengaturan & dependensi** — mendeteksi `apt/dnf/pacman/zypper/apk/brew`, memasang ffmpeg + ImageMagick, dan memasang peluncur `mt`.
+- **Tentang** — informasi penulis, lisensi, dan tautan proyek.
 
-## Requirements
+## Persyaratan
 
-| Requirement                        | Notes                                   |
-| ---------------------------------- | --------------------------------------- |
-| bash 4+                            | present on virtually every distribution |
-| ffmpeg + ffprobe                   | required for video and audio            |
-| ImageMagick (`magick` / `convert`) | required for images                     |
-| jpegtran, untrunc                  | optional, used by specific repair modes |
+| Persyaratan                        | Catatan                                          |
+| ---------------------------------- | ------------------------------------------------ |
+| bash 4+                            | tersedia di hampir semua distribusi              |
+| ffmpeg + ffprobe                   | diperlukan untuk video dan audio                 |
+| ImageMagick (`magick` / `convert`) | diperlukan untuk gambar                          |
+| jpegtran, untrunc                  | opsional, digunakan oleh mode perbaikan tertentu |
 
-Both the installer and the in-app **Setup & dependencies → Install dependencies**
-fill in what is missing automatically. The command is chosen from the detected
-package manager:
+Installer dan menu dalam aplikasi **Pengaturan & dependensi → Pasang dependensi**
+akan melengkapi komponen yang belum tersedia secara otomatis. Perintah yang digunakan
+dipilih berdasarkan pengelola paket yang terdeteksi:
 
-| Distribution family                         | Package manager | Packages installed                       |
-| ------------------------------------------- | --------------- | ---------------------------------------- |
-| Debian, Ubuntu, Mint, Pop!\_OS, Kali        | `apt-get`       | `ffmpeg imagemagick libjpeg-turbo-progs` |
-| Fedora, RHEL, CentOS Stream, Rocky, Alma    | `dnf`           | `ffmpeg ImageMagick libjpeg-turbo-utils` |
-| Arch, Manjaro, EndeavourOS, CachyOS, Garuda | `pacman`        | `ffmpeg imagemagick libjpeg-turbo`       |
-| openSUSE Leap / Tumbleweed                  | `zypper`        | `ffmpeg ImageMagick`                     |
-| Alpine                                      | `apk`           | `ffmpeg imagemagick`                     |
-| macOS, Linuxbrew                            | `brew`          | `ffmpeg imagemagick jpeg-turbo`          |
-| anything else                               | —               | install ffmpeg + ImageMagick manually    |
+| Keluarga distribusi                         | Pengelola paket | Paket yang dipasang                       |
+| ------------------------------------------- | --------------- | ----------------------------------------- |
+| Debian, Ubuntu, Mint, Pop!\_OS, Kali        | `apt-get`       | `ffmpeg imagemagick libjpeg-turbo-progs`  |
+| Fedora, RHEL, CentOS Stream, Rocky, Alma    | `dnf`           | `ffmpeg ImageMagick libjpeg-turbo-utils`  |
+| Arch, Manjaro, EndeavourOS, CachyOS, Garuda | `pacman`        | `ffmpeg imagemagick libjpeg-turbo`        |
+| openSUSE Leap / Tumbleweed                  | `zypper`        | `ffmpeg ImageMagick`                      |
+| Alpine                                      | `apk`           | `ffmpeg imagemagick`                      |
+| macOS, Linuxbrew                            | `brew`          | `ffmpeg imagemagick jpeg-turbo`           |
+| lainnya                                     | —               | pasang ffmpeg + ImageMagick secara manual |
 
-On Fedora and RHEL, `ffmpeg` comes from RPM Fusion; enable it first if the
-package cannot be found. `jpegtran` and `untrunc` are optional and are used only
-by specific repair modes.
+Di Fedora dan RHEL, `ffmpeg` berasal dari RPM Fusion; aktifkan repositori tersebut
+terlebih dahulu jika paket tidak ditemukan. `jpegtran` dan `untrunc` bersifat
+opsional dan hanya digunakan oleh mode perbaikan tertentu.
 
-If something is missing, open **Setup & dependencies → Install dependencies** and
-the toolkit will use your package manager.
+Jika ada komponen yang belum tersedia, buka **Pengaturan & dependensi → Pasang
+dependensi** dan toolkit akan menggunakan pengelola paket Anda.
 
-## Installation
+## Instalasi
 
-### Quick install
+### Instalasi cepat
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/jirankun/media-toolkit/main/install.sh | bash
+curl -fsSL http://zhyllanfyllah.is-a.dev/media-toolkit/install.sh | bash
 ```
 
-Open a new terminal afterwards and run:
+Setelah itu, buka terminal baru dan jalankan:
 
 ```sh
 mt
 ```
 
-The installer also creates a `media-toolkit` command, so both names work.
+Installer juga membuat perintah `media-toolkit`, jadi kedua nama tersebut dapat digunakan.
 
-### Manual install
+### Instalasi manual
 
 ```sh
 git clone https://github.com/jirankun/media-toolkit.git
@@ -84,73 +85,74 @@ cd media-toolkit
 ./install
 ```
 
-### Run without installing
+### Jalankan tanpa instalasi
 
 ```sh
 ./media-toolkit
 ```
 
-### Installer options
+### Opsi installer
 
 ```sh
-./install --repo OWNER/REPO     # use a different GitHub repository
-./install --branch dev          # use a different branch
-./install --prefix DIR          # code location (default $XDG_DATA_HOME/media-toolkit)
-./install --bin DIR             # command location (default $XDG_BIN_HOME)
-./install --no-path             # do not modify shell rc files
-./install --no-deps             # do not install ffmpeg / ImageMagick
-./install --uninstall           # remove the installed copy and both commands
+./install --repo OWNER/REPO     # gunakan repositori GitHub lain
+./install --branch dev          # gunakan cabang lain
+./install --prefix DIR          # lokasi kode (default $XDG_DATA_HOME/media-toolkit)
+./install --bin DIR             # lokasi perintah (default $XDG_BIN_HOME)
+./install --no-path             # jangan ubah berkas rc shell
+./install --no-deps             # jangan pasang ffmpeg / ImageMagick
+./install --uninstall           # hapus salinan terpasang dan kedua perintah
 ```
 
-The installer downloads the repository archive with `curl` or `wget`, installs
-it under `${XDG_DATA_HOME:-~/.local/share}/media-toolkit`, creates the `mt` and
-`media-toolkit` commands in `${XDG_BIN_HOME:-~/.local/bin}`, installs missing
-dependencies through your package manager (with `sudo` when needed), and adds
-that directory to `PATH` when needed.
+Installer mengunduh arsip repositori dengan `curl` atau `wget`, memasangnya di
+`${XDG_DATA_HOME:-~/.local/share}/media-toolkit`, membuat perintah `mt` dan
+`media-toolkit` di `${XDG_BIN_HOME:-~/.local/bin}`, memasang dependensi yang belum
+tersedia melalui pengelola paket Anda (menggunakan `sudo` bila diperlukan), dan
+menambahkan direktori tersebut ke `PATH` bila perlu.
 
-It follows the XDG user-directory layout, so no root access is required. To
-install system-wide instead:
+Installer mengikuti tata letak direktori pengguna XDG, sehingga akses root tidak
+diperlukan. Untuk memasang bagi seluruh sistem:
 
 ```sh
 sudo ./install --prefix /usr/local/share/media-toolkit \
                --bin /usr/local/bin --no-path
 ```
 
-### Shell detection
+### Deteksi shell
 
-The installer reads your login shell from `$SHELL` and appends a single
-`PATH` block at the end of that shell's rc file:
+Installer membaca shell login Anda dari `$SHELL` dan menambahkan satu blok
+`PATH` di akhir berkas rc shell tersebut:
 
-| Shell         | File                         |
-| ------------- | ---------------------------- |
-| zsh           | `~/.zshrc`                   |
-| bash          | `~/.bashrc`                  |
-| fish          | `~/.config/fish/config.fish` |
-| anything else | `~/.profile`                 |
+| Shell   | Berkas                       |
+| ------- | ---------------------------- |
+| zsh     | `~/.zshrc`                   |
+| bash    | `~/.bashrc`                  |
+| fish    | `~/.config/fish/config.fish` |
+| lainnya | `~/.profile`                 |
 
-The block is idempotent (added once) and is removed again by `--uninstall`.
-Use `--no-path` to manage `PATH` yourself.
+Blok ini idempoten (hanya ditambahkan sekali) dan akan dihapus kembali saat
+`--uninstall` dijalankan. Gunakan `--no-path` untuk mengelola `PATH` sendiri.
 
-### Uninstall
+### Menghapus instalasi
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/jirankun/media-toolkit/main/install | bash -s -- --uninstall
+curl -fsSL https://zhyllanfyllah.is-a.dev/media-toolkit/install.sh | bash -s -- --uninstall
 ```
 
-## Usage
+## Penggunaan
 
 ```sh
 mt
 ```
 
-Navigation: `↑↓` / `j k`, `PgUp` `PgDn`, `Home` `End`, number keys `1-9` to jump,
-`Enter` to choose, `q` / `Esc` to go back. In file lists: `Space` toggles a file
-and `a` toggles all of them.
+Navigasi: `↑↓` / `j k`, `PgUp` `PgDn`, `Home` `End`, tombol angka `1-9` untuk
+lompat, `Enter` untuk memilih, `q` / `Esc` untuk kembali. Dalam daftar berkas:
+`Space` memilih atau membatalkan pilihan sebuah berkas, dan `a` memilih atau
+membatalkan pilihan semua berkas.
 
-Progress is shown per batch with a live percentage bar, and every run is
-appended to `outputs/toolkit.log`.
+Progres ditampilkan untuk setiap batch dengan bilah persentase yang diperbarui
+langsung, dan setiap eksekusi dicatat di `outputs/toolkit.log`.
 
-Results go to the folder you run the toolkit from:
+Hasil disimpan di folder tempat Anda menjalankan toolkit:
 
 ```
 outputs/
@@ -161,34 +163,32 @@ outputs/
 └── toolkit.log
 ```
 
-Your source files are never modified.
+Berkas sumber Anda tidak pernah diubah.
 
-## How it is built
+## Struktur proyek
 
 ```
-media-toolkit      entry point and main menu
-install            standalone installer
-lib/ui             theme, menus, checklists, prompts, pager, progress bar
-lib/core           paths, logging, dependency detection, file helpers
-lib/convert        format conversion
-lib/compress       compression presets and bitrate maths
-lib/repair         container and stream repair
-lib/extract        audio extraction
-lib/info           media info, system info, about
-lib/setup          dependency install and launcher management
+media-toolkit      titik masuk dan menu utama
+install            installer mandiri
+lib/ui             tema, menu, daftar pilihan, prompt, pager, bilah progres
+lib/core           jalur, pencatatan, deteksi dependensi, utilitas berkas
+lib/convert        konversi format
+lib/compress       preset kompresi dan perhitungan bitrate
+lib/repair         perbaikan kontainer dan stream
+lib/extract        ekstraksi audio
+lib/info           info media, info sistem, tentang
+lib/setup          pemasangan dependensi dan pengelolaan peluncur
 README.md
 LICENSE
 ```
 
-The UI adapts to the terminal: 256 colours with a 16-colour fallback, UTF-8
-box drawing with an ASCII fallback, and a numbered plain-text mode when the
-output is not a terminal.
+Antarmuka menyesuaikan diri dengan terminal: warna 256 dengan fallback 16 warna,
+bingkai UTF-8 dengan fallback ASCII, serta mode teks biasa bernomor ketika
+keluaran bukan terminal.
 
-## License
+## Lisensi
 
 MIT © 2026 Zhyllan Fyllah
 
-- Website: <https://zhyllanfyllah.my.id>
+- Situs web: <https://zhyllanfyllah.my.id>
 - GitHub: [@jirankun](https://github.com/jirankun)
-
-  > semua kode buatan saya sendiri, kecuali readme ini, karena saya tidak ada waktu lebih untuk membuat readme dengan mengamati kode🙏
