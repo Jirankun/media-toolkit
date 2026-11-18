@@ -7,6 +7,12 @@
     </head>
     <body>
         <h1>Media Toolkit</h1>
+        <p>
+            Versi terbaru: <b>v<span id="mtk-version">0.1.0</span></b>
+        </p>
+        <nav aria-label="Navigasi utama">
+            <a href="./" style="color: green">Beranda</a> | <a href="changelog/">Changelog</a>
+        </nav>
         <hr />
         <section>
             <h2>1. Apa itu Media Toolkit?</h2>
@@ -115,6 +121,17 @@ curl -fsSL https://zhyllanfyllah.is-a.dev/media-toolkit/install.sh | bash -s -- 
                         status.textContent = "Pilih dan salin perintah secara manual.";
                     }
                 });
+            }
+
+            const versionEl = document.getElementById("mtk-version");
+            if (versionEl) {
+                fetch("version", { cache: "no-store" })
+                    .then(res => (res.ok ? res.text() : ""))
+                    .then(text => {
+                        const latest = text.trim().split(/\s+/)[0];
+                        if (/^\d+(\.\d+)*$/.test(latest)) versionEl.textContent = latest;
+                    })
+                    .catch(() => {});
             }
         </script>
     </body>

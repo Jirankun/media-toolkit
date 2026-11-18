@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="id">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Changelog | Media Toolkit</title>
+    </head>
+    <body>
+        <h1>Changelog</h1>
+        <p>
+            Versi terbaru: <b>v<span id="mtk-version">0.1.0</span></b>
+        </p>
+        <nav aria-label="Navigasi utama">
+            <a href="../">Beranda</a> | <a href="./" style="color: green">Changelog</a>
+        </nav>
+        <hr />
+        <p id="status">Memuat…</p>
+        <main id="entries"></main>
+        <hr />
+        <footer>
+            MIT &copy;2026 <a href="https://zhyllanfyllah.my.id" target="_blank" rel="noopener">Zhyllan Fyllah</a> |
+            Jirankun
+        </footer>
+
+        <script>
+            function renderChangelog(text) {
+                const root = document.getElementById("entries");
+                let list = null;
+
+                for (const raw of text.split(/\r?\n/)) {
+                    const line = raw.trim();
+                    if (!line) {
+                        list = null;
+                        continue;
+                    }
+
+                    const heading = line.match(/^(\d+(?:\.\d+)*)\s*(?:[—–-]\s*(.+))?$/);
+                    if (heading) {
+                        const title = document.createElement("h2");
+                        title.textContent = "v" + heading[1] + (heading[2] ? " — " + heading[2] : "");
+                        root.appendChild(title);
+                        list = document.createElement("ul");
+                        root.appendChild(list);
+                        continue;
+                    }
+
+                    if (!list) {
+                        list = document.createElement("ul");
+                        root.appendChild(list);
+                    }
+                    const item = document.createElement("li");
+                    item.textContent = line.replace(/^[-*]\s*/, "");
+                    list.appendChild(item);
+                }
+            }
+
+            (async () => {
+                const status = document.getElementById("status");
+
+                try {
+                    const res = await fetch("changelog.txt", { cache: "no-store" });
+                    if (!res.ok) throw new Error(res.status);
+                    renderChangelog(await res.text());
+                    status.remove();
+                } catch {
+                    status.textContent = "Gagal memuat changelog.txt. Buka berkasnya langsung: changelog.txt";
+                }
+
+                try {
+                    const res = await fetch("../version", { cache: "no-store" });
+                    if (!res.ok) return;
+                    const latest = (await res.text()).trim().split(/\s+/)[0];
+                    if (/^\d+(\.\d+)*$/.test(latest)) {
+                        document.getElementById("mtk-version").textContent = latest;
+                    }
+                } catch {}
+            })();
+        </script>
+    </body>
+</html>

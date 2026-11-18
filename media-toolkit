@@ -90,6 +90,8 @@ if ! ensure_dirs; then
     exit 1
 fi
 
+auto_update_check "$@"
+
 detect_tools
 log "=== session start (v$MTK_VERSION, $WORK_DIR) ==="
 

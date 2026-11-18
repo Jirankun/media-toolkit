@@ -1,0 +1,5 @@
+0.1.0 — 2026-11-19
+- Rilis awal Media Toolkit: konversi, kompresi, perbaikan, ekstraksi audio, info media, dan Setup.
+- Pemeriksaan pembaruan otomatis saat mt dijalankan, dengan pilihan untuk langsung memperbarui.
+- Versi kini diambil dari satu file version dan disinkronkan otomatis lewat GitHub Actions.
+- Halaman changelog ini menampilkan riwayat versi terbaru.

@@ -239,7 +239,7 @@ if [ "$(cd -- "$PREFIX" && pwd -P)" != "$(cd -- "$SRC" && pwd -P)" ]; then
     rm -rf "$PREFIX/media-toolkit" "$PREFIX/lib"
     cp -a "$SRC/media-toolkit" "$PREFIX/media-toolkit" || die "copy failed"
     cp -a "$SRC/lib" "$PREFIX/lib" || die "copy failed"
-    for extra in README.md LICENSE; do
+    for extra in README.md LICENSE version; do
         [ -f "$SRC/$extra" ] && cp -a "$SRC/$extra" "$PREFIX/$extra"
     done
     chmod +x "$PREFIX/media-toolkit"

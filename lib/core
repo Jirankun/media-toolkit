@@ -3,16 +3,29 @@
 # Zhyllan Fyllah | MIT License
 
 
-MTK_VERSION="0.1.0"
+if [[ -z ${SCRIPT_DIR:-} ]]; then
+    SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+fi
+
+# `version` in the project root is the single source of truth. The constant is
+# only a fallback for installed copies that predate the file.
+MTK_VERSION_FALLBACK="0.1.0"
+MTK_VERSION="$MTK_VERSION_FALLBACK"
+if [[ -r $SCRIPT_DIR/version ]]; then
+    MTK_VERSION_RAW=$(head -n1 -- "$SCRIPT_DIR/version" 2>/dev/null | tr -d '[:space:]')
+    [[ $MTK_VERSION_RAW =~ ^[0-9]+(\.[0-9]+)*$ ]] && MTK_VERSION=$MTK_VERSION_RAW
+    unset MTK_VERSION_RAW
+fi
+
 MTK_NAME="Media Toolkit"
 MTK_AUTHOR="Zhyllan Fyllah"
 MTK_WEBSITE="https://zhyllanfyllah.my.id"
 MTK_GITHUB="Jirankun"
 MTK_REPO="Jirankun/media-toolkit"
-
-if [[ -z ${SCRIPT_DIR:-} ]]; then
-    SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
-fi
+MTK_BRANCH="${MTK_BRANCH:-main}"
+MTK_SITE="${MTK_SITE:-https://zhyllanfyllah.is-a.dev/media-toolkit}"
+MTK_UPDATE_URL="${MTK_UPDATE_URL:-$MTK_SITE/version}"
+MTK_INSTALL_URL="${MTK_INSTALL_URL:-$MTK_SITE/install.sh}"
 
 WORK_DIR="${MTK_WORK_DIR:-$PWD}"
 OUT_ROOT="$WORK_DIR/outputs"

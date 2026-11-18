@@ -5,8 +5,10 @@ perbaikan, ekstraksi audio, dan pemeriksaan media. Antarmukanya adalah TUI
 mandiri berbasis bash dan ANSI, bertema hitam dan ungu — tanpa `dialog` maupun
 ncurses.
 
+> Versi terbaru: **0.1.0** · [Changelog](https://zhyllanfyllah.is-a.dev/media-toolkit/changelog/)
+
 ```
-╭─ Media Toolkit  2.1.0 ───────────────────────╮
+╭─ Media Toolkit  0.1.0 ───────────────────────╮
 │ source: /home/user/videos                    │
 ├──────────────────────────────────────────────┤
 │  ▸ Convert media      change container/codec │
@@ -28,7 +30,7 @@ ncurses.
 - **Perbaikan** — remux cepat, enkode ulang penuh, untrunc untuk MP4, penghapusan metadata, dan jpegtran tanpa kehilangan kualitas.
 - **Ekstraksi audio** — mengambil trek audio dari video ke mp3, m4a/aac, flac, wav, atau opus.
 - **Info media** — durasi, ukuran, kontainer, bitrate, kodek, resolusi, fps, dan tata letak audio.
-- **Pengaturan & dependensi** — mendeteksi `apt/dnf/pacman/zypper/apk/brew`, memasang ffmpeg + ImageMagick, dan memasang peluncur `mt`.
+- **Pengaturan & dependensi** — mendeteksi `apt/dnf/pacman/zypper/apk/brew`, memasang ffmpeg + ImageMagick, memasang peluncur `mt`, serta memeriksa dan memasang pembaruan (cek otomatis saat dijalankan, atau manual lewat **Setup → Check for updates**).
 - **Tentang** — informasi penulis, lisensi, dan tautan proyek.
 
 ## Persyaratan
@@ -138,6 +140,34 @@ Blok ini idempoten (hanya ditambahkan sekali) dan akan dihapus kembali saat
 curl -fsSL https://zhyllanfyllah.is-a.dev/media-toolkit/install.sh | bash -s -- --uninstall
 ```
 
+## Pembaruan
+
+Versi proyek disimpan di satu berkas, [`version`](version), dan dibaca langsung
+oleh toolkit saat dijalankan. Setiap kali `mt` dijalankan, toolkit membandingkan
+versi terpasang dengan berkas
+<https://zhyllanfyllah.is-a.dev/media-toolkit/version>. Bila ada versi baru, Anda
+ditanya apakah ingin memperbarui; setelah berhasil, toolkit dijalankan ulang
+dengan versi baru. Bila versi sudah terbaru atau tidak ada koneksi, toolkit
+langsung terbuka seperti biasa.
+
+Pemeriksaan juga bisa dilakukan manual dari **Setup & dependencies → Check for
+updates** tanpa keluar dari aplikasi.
+
+| Variabel lingkungan | Fungsi                                                         |
+| ------------------- | -------------------------------------------------------------- |
+| `MTK_NO_UPDATE=1`   | lewati pemeriksaan otomatis saat startup                       |
+| `MTK_UPDATE_URL`    | alamat berkas sumber versi (default `$MTK_SITE/version`)       |
+| `MTK_INSTALL_URL`   | alamat installer untuk memperbarui (default `$MTK_SITE/install.sh`) |
+| `MTK_SITE`          | ganti basis URL di atas sekaligus                              |
+
+Pembaruan menjalankan installer dengan `--no-deps`, jadi ffmpeg/ImageMagick tidak
+dipasang ulang dan berkas di `outputs/` tidak disentuh.
+
+Untuk merilis versi baru, cukup ubah isi berkas `version`. Workflow
+`.github/workflows/sync-version.yml` kemudian menyinkronkan angka tersebut ke
+README, homepage (`index.html`), halaman changelog, dan nilai fallback di
+`lib/core`, lalu menyimpan perubahannya otomatis.
+
 ## Penggunaan
 
 ```sh
@@ -169,7 +199,11 @@ Berkas sumber Anda tidak pernah diubah.
 
 ```
 media-toolkit      titik masuk dan menu utama
-install            installer mandiri
+install.sh         installer mandiri
+version            sumber versi tunggal (dibaca script, website, dan updater)
+index.html         homepage proyek + versi terkini
+changelog/         halaman riwayat versi (membaca changelog.txt)
+.github/           workflow penyinkronan versi
 lib/ui             tema, menu, daftar pilihan, prompt, pager, bilah progres
 lib/core           jalur, pencatatan, deteksi dependensi, utilitas berkas
 lib/convert        konversi format

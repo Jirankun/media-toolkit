@@ -150,7 +150,9 @@ install_launcher() {
     if [[ $(cd -- "$dest" && pwd -P) != $(cd -- "$SCRIPT_DIR" && pwd -P) ]]; then
         rm -rf -- "$dest"
         mkdir -p "$dest" || { ui_msg "Install launcher" "Could not create $dest"; return 1; }
-        cp -a -- "$entry" "$SCRIPT_DIR/lib" "$dest/" \
+        local -a extras=()
+        [[ -f $SCRIPT_DIR/version ]] && extras+=("$SCRIPT_DIR/version")
+        cp -a -- "$entry" "$SCRIPT_DIR/lib" "${extras[@]}" "$dest/" \
             || { ui_msg "Install launcher" "Copy failed."; return 1; }
         chmod +x "$dest/$entry_name"
     fi
@@ -198,10 +200,132 @@ view_log() {
     rm -f -- "$tmp"
 }
 
+_fetch_url() { # <url> [timeout] -> body on stdout
+    local url=$1 timeout=${2:-15}
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL --max-time "$timeout" -- "$url" 2>/dev/null
+    elif command -v wget >/dev/null 2>&1; then
+        wget -qO- --timeout="$timeout" -- "$url"
+    else
+        return 127
+    fi
+}
+
+_ver_cmp() { # <a> <b> -> -1, 0 or 1
+    awk -v a="${1#v}" -v b="${2#v}" 'BEGIN {
+        na = split(a, A, "."); nb = split(b, B, ".");
+        n = (na > nb) ? na : nb;
+        for (i = 1; i <= n; i++) {
+            x = A[i] + 0; y = B[i] + 0;
+            if (x < y) { print -1; exit }
+            if (x > y) { print 1; exit }
+        }
+        print 0;
+    }'
+}
+
+latest_version() { # [timeout] -> version from the update source, empty on failure
+    local raw v
+    raw=$(_fetch_url "$MTK_UPDATE_URL" "${1:-15}") || return 1
+    # The source is normally the plain `version` file; accept the older
+    # lib/core layout (MTK_VERSION="x.y.z") as well.
+    v=$(printf '%s\n' "$raw" | sed -n 's/^MTK_VERSION="\([^"]*\)".*/\1/p' | head -n1)
+    [[ -n $v ]] || v=$(printf '%s\n' "$raw" | grep -Eo '[0-9]+(\.[0-9]+)+' | head -n1)
+    [[ -n $v ]] || return 1
+    printf '%s' "$v"
+}
+
+_apply_update() { # <latest> ; sets UPDATE_ERROR on failure
+    local latest=$1 tmp rc
+    UPDATE_ERROR=''
+    tmp=$(mktemp "${TMPDIR:-/tmp}/mtk-install.XXXXXX")
+    if [[ -z $tmp ]] || ! _fetch_url "$MTK_INSTALL_URL" > "$tmp"; then
+        [[ -n $tmp ]] && rm -f -- "$tmp"
+        UPDATE_ERROR='download'
+        return 1
+    fi
+
+    log "--- UPDATE: $MTK_VERSION -> $latest ---"
+    ui_suspend
+    printf '\nUpdating %s %s -> %s\n\n' "$MTK_NAME" "$MTK_VERSION" "$latest"
+    bash "$tmp" --no-deps
+    rc=$?
+    rm -f -- "$tmp"
+    log "--- UPDATE rc=$rc ---"
+
+    if (( rc != 0 )); then
+        UPDATE_ERROR=$rc
+        return 1
+    fi
+    return 0
+}
+
+_update_error_text() {
+    if [[ $UPDATE_ERROR == download ]]; then
+        printf '%s' $'Could not download the installer.\n\nUpdate by hand with:\n  curl -fsSL '"$MTK_INSTALL_URL"$' | bash'
+    else
+        printf '%s' $'The installer exited with code '"$UPDATE_ERROR"$'.\n\nTry again with:\n  curl -fsSL '"$MTK_INSTALL_URL"$' | bash'
+    fi
+}
+
+check_update() {
+    local latest cmp
+    latest=$(latest_version)
+
+    if [[ -z $latest ]]; then
+        ui_msg "Check for updates" \
+            $'Could not read the latest version.\n\nCheck your connection or open:\n  '"$MTK_UPDATE_URL"
+        return 1
+    fi
+
+    cmp=$(_ver_cmp "$latest" "$MTK_VERSION")
+    if (( cmp <= 0 )); then
+        ui_msg "Check for updates" \
+            $'You are running the latest version.\n\n  installed : '"$MTK_VERSION"$'\n  latest    : '"$latest"
+        return 0
+    fi
+
+    ui_confirm "Update available" \
+        $'A newer version is available.\n\n  installed : '"$MTK_VERSION"$'\n  latest    : '"$latest"$'\n\nUpdate now? The installer replaces the installed copy.\nYour media, outputs and logs are kept.' || return 1
+
+    if ! _apply_update "$latest"; then
+        ui_msg "Check for updates" "$(_update_error_text)"
+        return 1
+    fi
+
+    printf '\nPress enter to return.\n'
+    read -r _ || true
+    ui_msg "Check for updates" $'Update finished.\n\nRestart the toolkit to use the new version.'
+}
+
+auto_update_check() { # runs at startup; silently continues when offline or up to date
+    (( UI_TTY )) || return 0
+    [[ ${MTK_NO_UPDATE:-0} == 1 ]] && return 0
+
+    local latest cmp
+    latest=$(latest_version 5)
+    [[ -n $latest ]] || return 0
+    cmp=$(_ver_cmp "$latest" "$MTK_VERSION")
+    (( cmp > 0 )) || return 0
+
+    ui_confirm "Update available" \
+        $'A newer version is available.\n\n  installed : '"$MTK_VERSION"$'\n  latest    : '"$latest"$'\n\nUpdate now? The toolkit updates itself and restarts.\nYour media, outputs and logs are kept.' || return 0
+
+    if ! _apply_update "$latest"; then
+        ui_msg "Update failed" "$(_update_error_text)"$'\n\nContinuing with the installed version.'
+        return 0
+    fi
+
+    ui_msg "Update finished" $'Restarting with the new version…'
+    ui_cleanup
+    MTK_NO_UPDATE=1 exec "${MTK_ENTRY:-$0}" "$@"
+}
+
 setup_menu() {
     ui_menu "Setup & dependencies" "Tools, launcher and maintenance" \
         "deps|Install dependencies|ffmpeg · ImageMagick via your package manager" \
         "status|Dependency status|what is installed and what is missing" \
+        "update|Check for updates|compare with the latest version online" \
         "launcher|Install mtk launcher|run the toolkit from any folder" \
         "paths|Output folders|where results are saved" \
         "log|View log|last 800 lines of toolkit.log" \
@@ -210,6 +334,7 @@ setup_menu() {
     case $UI_VALUE in
         deps)     install_dependencies ;;
         status)   deps_status_view ;;
+        update)   check_update ;;
         launcher) install_launcher ;;
         paths)
             ui_msg "Output folders" \
