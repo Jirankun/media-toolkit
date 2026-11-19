@@ -42,14 +42,19 @@ die() { err "$*"; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
 show_banner() {
-    local c='' r=''
+    local c='' r='' cols=${COLUMNS:-80}
+    if [ -t 1 ] && have tput; then
+        cols=$(tput cols 2>/dev/null || printf '%s' "$cols")
+    fi
+    case $cols in ''|*[!0-9]*) cols=80 ;; esac
     if [ -t 1 ] && [ "${TERM:-dumb}" != dumb ] && [ -z "${NO_COLOR:-}" ]; then
         c=$(printf '\033[1;38;5;141m')
         r=$(printf '\033[0m')
     fi
-    while IFS= read -r line; do
-        printf '%s%s%s\n' "$c" "$line" "$r"
-    done <<'BANNER'
+    if [ "$cols" -ge 110 ]; then
+        while IFS= read -r line; do
+            printf '%s%s%s\n' "$c" "$line" "$r"
+        done <<'BANNER'
 ███╗   ███╗███████╗██████╗ ██╗ █████╗     ████████╗ ██████╗  ██████╗ ██╗     ██╗  ██╗██╗████████╗
 ████╗ ████║██╔════╝██╔══██╗██║██╔══██╗    ╚══██╔══╝██╔═══██╗██╔═══██╗██║     ██║ ██╔╝██║╚══██╔══╝
 ██╔████╔██║█████╗  ██║  ██║██║███████║       ██║   ██║   ██║██║   ██║██║     █████╔╝ ██║   ██║
@@ -57,6 +62,18 @@ show_banner() {
 ██║ ╚═╝ ██║███████╗██████╔╝██║██║  ██║       ██║   ╚██████╔╝╚██████╔╝███████╗██║  ██╗██║   ██║
 ╚═╝     ╚═╝╚══════╝╚═════╝ ╚═╝╚═╝  ╚═╝       ╚═╝    ╚═════╝  ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝   ╚═╝
 BANNER
+    else
+        while IFS= read -r line; do
+            printf '%s%s%s\n' "$c" "$line" "$r"
+        done <<'BANNER'
+ __  __ _____
+|  \/  |_   _|
+| |\/| | | |
+| |  | | | |
+|_|  |_| |_|
+MEDIA TOOLKIT
+BANNER
+    fi
     printf '\n'
 }
 
