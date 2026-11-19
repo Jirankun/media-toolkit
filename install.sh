@@ -4,6 +4,13 @@
 
 set -eu
 
+# Termux keeps its own prefix and has no root; detect it before PREFIX below
+# overwrites the environment variable Termux exports.
+TERMUX=0
+if [ -n "${TERMUX_VERSION:-}" ]; then TERMUX=1; fi
+case ${PREFIX:-} in *com.termux*) TERMUX=1 ;; esac
+if command -v termux-setup-storage >/dev/null 2>&1; then TERMUX=1; fi
+
 REPO="${MTK_REPO:-jirankun/media-toolkit}"
 BRANCH="${MTK_BRANCH:-main}"
 PREFIX="${MTK_PREFIX:-${XDG_DATA_HOME:-$HOME/.local/share}/media-toolkit}"
@@ -17,6 +24,7 @@ shell_name() {
 }
 
 shell_rc() {
+    if [ "$TERMUX" = 1 ]; then printf '%s' "$HOME/.bashrc"; return; fi
     case $(shell_name) in
         zsh)  printf '%s' "$HOME/.zshrc" ;;
         bash) printf '%s' "$HOME/.bashrc" ;;
@@ -33,9 +41,29 @@ die() { err "$*"; exit 1; }
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
+show_banner() {
+    local c='' r=''
+    if [ -t 1 ] && [ "${TERM:-dumb}" != dumb ] && [ -z "${NO_COLOR:-}" ]; then
+        c=$(printf '\033[1;38;5;141m')
+        r=$(printf '\033[0m')
+    fi
+    while IFS= read -r line; do
+        printf '%s%s%s\n' "$c" "$line" "$r"
+    done <<'BANNER'
+███╗   ███╗███████╗██████╗ ██╗ █████╗     ████████╗ ██████╗  ██████╗ ██╗     ██╗  ██╗██╗████████╗
+████╗ ████║██╔════╝██╔══██╗██║██╔══██╗    ╚══██╔══╝██╔═══██╗██╔═══██╗██║     ██║ ██╔╝██║╚══██╔══╝
+██╔████╔██║█████╗  ██║  ██║██║███████║       ██║   ██║   ██║██║   ██║██║     █████╔╝ ██║   ██║
+██║╚██╔╝██║██╔══╝  ██║  ██║██║██╔══██║       ██║   ██║   ██║██║   ██║██║     ██╔═██╗ ██║   ██║
+██║ ╚═╝ ██║███████╗██████╔╝██║██║  ██║       ██║   ╚██████╔╝╚██████╔╝███████╗██║  ██╗██║   ██║
+╚═╝     ╚═╝╚══════╝╚═════╝ ╚═╝╚═╝  ╚═╝       ╚═╝    ╚═════╝  ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝   ╚═╝
+BANNER
+    printf '\n'
+}
+
 detect_pm() {
     PM=''
-    if have apt-get; then PM=apt
+    if [ "$TERMUX" = 1 ]; then PM=termux
+    elif have apt-get; then PM=apt
     elif have dnf; then PM=dnf
     elif have pacman; then PM=pacman
     elif have zypper; then PM=zypper
@@ -52,6 +80,7 @@ pm_label() {
         zypper) printf '%s' 'zypper (openSUSE)' ;;
         apk)    printf '%s' 'apk (Alpine)' ;;
         brew)   printf '%s' 'brew (macOS/Linuxbrew)' ;;
+        termux) printf '%s' 'pkg (Termux)' ;;
         *)      printf '%s' '' ;;
     esac
 }
@@ -64,6 +93,7 @@ pm_deps() {
         zypper) DEPS='ffmpeg ImageMagick' ;;
         apk)    DEPS='ffmpeg imagemagick' ;;
         brew)   DEPS='ffmpeg imagemagick jpeg-turbo' ;;
+        termux) DEPS='ffmpeg imagemagick libjpeg-turbo' ;;
         *)      DEPS='' ;;
     esac
 }
@@ -77,8 +107,9 @@ pm_install_cmd() {
         zypper) PM_CMD="zypper --non-interactive install $DEPS" ;;
         apk)    PM_CMD="apk add $DEPS" ;;
         brew)   PM_CMD="brew install $DEPS" ;;
+        termux) PM_CMD="pkg install -y $DEPS" ;;
     esac
-    if [ "$(id -u)" -ne 0 ] && [ "$PM" != brew ] && have sudo; then
+    if [ "$(id -u)" -ne 0 ] && [ "$PM" != brew ] && [ "$PM" != termux ] && have sudo; then
         PM_CMD="sudo $PM_CMD"
     fi
 }
@@ -141,7 +172,7 @@ Options:
   -h, --help          show this help
 
 Examples:
-  curl -fsSL https://raw.githubusercontent.com/$REPO/main/install | bash
+  curl -fsSL https://zhyllanfyllah.is-a.dev/$REPO/install.sh | bash
   ./install --prefix ~/.local/share/media-toolkit --bin ~/.local/bin
   ./install --uninstall
 
@@ -189,6 +220,8 @@ if [ "$ACTION" = "uninstall" ]; then
     say "Removed $PREFIX and the mt / media-toolkit commands."
     exit 0
 fi
+
+show_banner
 
 command -v bash >/dev/null 2>&1 || die "bash is required"
 
@@ -239,7 +272,7 @@ if [ "$(cd -- "$PREFIX" && pwd -P)" != "$(cd -- "$SRC" && pwd -P)" ]; then
     rm -rf "$PREFIX/media-toolkit" "$PREFIX/lib"
     cp -a "$SRC/media-toolkit" "$PREFIX/media-toolkit" || die "copy failed"
     cp -a "$SRC/lib" "$PREFIX/lib" || die "copy failed"
-    for extra in README.md LICENSE version; do
+    for extra in README.md LICENSE version ascii-installer; do
         [ -f "$SRC/$extra" ] && cp -a "$SRC/$extra" "$PREFIX/$extra"
     done
     chmod +x "$PREFIX/media-toolkit"

@@ -80,6 +80,18 @@ detect_tools() {
     [[ -z $MAGICK ]] && MISSING_TOOLS+=(ImageMagick)
 }
 
+mtk_banner() { # print ascii-installer in the theme purple
+    local file="$SCRIPT_DIR/ascii-installer" line c='' r=''
+    [[ -r $file ]] || return 1
+    if [[ -t 1 && ${TERM:-dumb} != dumb && -z ${NO_COLOR:-} ]]; then
+        c=$'\e[1;38;5;141m'
+        r=$'\e[0m'
+    fi
+    while IFS= read -r line; do
+        printf '%s%s%s\n' "$c" "$line" "$r"
+    done < "$file"
+}
+
 tool_status_line() {
     local -a ok=()
     [[ -n $FFMPEG ]] && ok+=(ffmpeg)

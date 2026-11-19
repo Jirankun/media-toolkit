@@ -8,6 +8,15 @@ ncurses.
 > Versi terbaru: **0.1.0** · [Changelog](https://zhyllanfyllah.is-a.dev/media-toolkit/changelog/)
 
 ```
+███╗   ███╗███████╗██████╗ ██╗ █████╗     ████████╗ ██████╗  ██████╗ ██╗     ██╗  ██╗██╗████████╗
+████╗ ████║██╔════╝██╔══██╗██║██╔══██╗    ╚══██╔══╝██╔═══██╗██╔═══██╗██║     ██║ ██╔╝██║╚══██╔══╝
+██╔████╔██║█████╗  ██║  ██║██║███████║       ██║   ██║   ██║██║   ██║██║     █████╔╝ ██║   ██║
+██║╚██╔╝██║██╔══╝  ██║  ██║██║██╔══██║       ██║   ██║   ██║██║   ██║██║     ██╔═██╗ ██║   ██║
+██║ ╚═╝ ██║███████╗██████╔╝██║██║  ██║       ██║   ╚██████╔╝╚██████╔╝███████╗██║  ██╗██║   ██║
+╚═╝     ╚═╝╚══════╝╚═════╝ ╚═╝╚═╝  ╚═╝       ╚═╝    ╚═════╝  ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝   ╚═╝
+```
+
+```
 ╭─ Media Toolkit  0.1.0 ───────────────────────╮
 │ source: /home/user/videos                    │
 ├──────────────────────────────────────────────┤
@@ -30,7 +39,7 @@ ncurses.
 - **Perbaikan** — remux cepat, enkode ulang penuh, untrunc untuk MP4, penghapusan metadata, dan jpegtran tanpa kehilangan kualitas.
 - **Ekstraksi audio** — mengambil trek audio dari video ke mp3, m4a/aac, flac, wav, atau opus.
 - **Info media** — durasi, ukuran, kontainer, bitrate, kodek, resolusi, fps, dan tata letak audio.
-- **Pengaturan & dependensi** — mendeteksi `apt/dnf/pacman/zypper/apk/brew`, memasang ffmpeg + ImageMagick, memasang peluncur `mt`, serta memeriksa dan memasang pembaruan (cek otomatis saat dijalankan, atau manual lewat **Setup → Check for updates**).
+- **Pengaturan & dependensi** — mendeteksi `apt/dnf/pacman/zypper/apk/brew/pkg`, memasang ffmpeg + ImageMagick, menampilkan versi terpasang beserta versi yang tersedia (cek saja), memasang peluncur `mt`, serta memeriksa dan memasang pembaruan toolkit (cek otomatis saat dijalankan, atau manual lewat **Setup → Check for updates**).
 - **Tentang** — informasi penulis, lisensi, dan tautan proyek.
 
 ## Persyaratan
@@ -54,7 +63,11 @@ dipilih berdasarkan pengelola paket yang terdeteksi:
 | openSUSE Leap / Tumbleweed                  | `zypper`        | `ffmpeg ImageMagick`                      |
 | Alpine                                      | `apk`           | `ffmpeg imagemagick`                      |
 | macOS, Linuxbrew                            | `brew`          | `ffmpeg imagemagick jpeg-turbo`           |
+| Android (Termux)                            | `pkg`           | `ffmpeg imagemagick libjpeg-turbo`        |
 | lainnya                                     | —               | pasang ffmpeg + ImageMagick secara manual |
+
+Di Termux, instalasi berjalan di dalam prefix Termux tanpa root dan `PATH`
+ditambahkan ke `~/.bashrc`.
 
 Di Fedora dan RHEL, `ffmpeg` berasal dari RPM Fusion; aktifkan repositori tersebut
 terlebih dahulu jika paket tidak ditemukan. `jpegtran` dan `untrunc` bersifat
@@ -62,6 +75,12 @@ opsional dan hanya digunakan oleh mode perbaikan tertentu.
 
 Jika ada komponen yang belum tersedia, buka **Pengaturan & dependensi → Pasang
 dependensi** dan toolkit akan menggunakan pengelola paket Anda.
+
+**Pengaturan & dependensi → Status dependensi** menampilkan versi paket yang
+terpasang dan, jika ada, versi yang tersedia di repositori — misalnya
+`imagemagick 6.9.11-60 → 6.9.12-1 tersedia`. Pemeriksaan ini hanya membaca
+database paket lokal, tidak pernah memasang atau meningkatkan paket, dan tidak
+berjalan saat startup. Setel `MTK_NO_UPDATE=1` untuk melewatinya.
 
 ## Instalasi
 
@@ -153,12 +172,12 @@ langsung terbuka seperti biasa.
 Pemeriksaan juga bisa dilakukan manual dari **Setup & dependencies → Check for
 updates** tanpa keluar dari aplikasi.
 
-| Variabel lingkungan | Fungsi                                                         |
-| ------------------- | -------------------------------------------------------------- |
-| `MTK_NO_UPDATE=1`   | lewati pemeriksaan otomatis saat startup                       |
-| `MTK_UPDATE_URL`    | alamat berkas sumber versi (default `$MTK_SITE/version`)       |
+| Variabel lingkungan | Fungsi                                                              |
+| ------------------- | ------------------------------------------------------------------- |
+| `MTK_NO_UPDATE=1`   | lewati pemeriksaan otomatis saat startup                            |
+| `MTK_UPDATE_URL`    | alamat berkas sumber versi (default `$MTK_SITE/version`)            |
 | `MTK_INSTALL_URL`   | alamat installer untuk memperbarui (default `$MTK_SITE/install.sh`) |
-| `MTK_SITE`          | ganti basis URL di atas sekaligus                              |
+| `MTK_SITE`          | ganti basis URL di atas sekaligus                                   |
 
 Pembaruan menjalankan installer dengan `--no-deps`, jadi ffmpeg/ImageMagick tidak
 dipasang ulang dan berkas di `outputs/` tidak disentuh.
@@ -199,6 +218,7 @@ Berkas sumber Anda tidak pernah diubah.
 
 ```
 media-toolkit      titik masuk dan menu utama
+ascii-installer    banner ASCII (installer, --version/--help, website)
 install.sh         installer mandiri
 version            sumber versi tunggal (dibaca script, website, dan updater)
 index.html         homepage proyek + versi terkini
@@ -219,6 +239,17 @@ LICENSE
 Antarmuka menyesuaikan diri dengan terminal: warna 256 dengan fallback 16 warna,
 bingkai UTF-8 dengan fallback ASCII, serta mode teks biasa bernomor ketika
 keluaran bukan terminal.
+
+Jika font terminal tidak menggambar karakter kotak (bingkai terlihat putus atau
+muncul tanda tanya), paksa mode ASCII:
+
+```sh
+MTK_ASCII=1 mt
+```
+
+Sebaliknya `MTK_UTF8=1` memaksa bingkai UTF-8 walau locale bukan UTF-8. Pada
+Termux, font diatur oleh aplikasi terminal (lewat Termux:Styling), bukan oleh
+toolkit — jadi mode ASCII adalah cara paling aman di perangkat tersebut.
 
 ## Lisensi
 

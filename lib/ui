@@ -19,6 +19,9 @@ ui_theme() {
 
     charmap=$(locale charmap 2>/dev/null || true)
     [[ $charmap == *UTF-8* || $charmap == *utf8* ]] && UI_UTF8=1
+    # Some terminals/fonts lack box-drawing glyphs even under a UTF-8 locale.
+    [[ ${MTK_ASCII:-0} == 1 ]] && UI_UTF8=0
+    [[ ${MTK_UTF8:-0} == 1 ]] && UI_UTF8=1
 
     colors=$(tput colors 2>/dev/null || true)
     [[ $colors =~ ^[0-9]+$ ]] || colors=8
@@ -871,8 +874,20 @@ _ui_progress_draw() { # top left inner pct label
     ui_row $(( top + 4 )) $(( left + 2 )) "$UI_DIM" "please wait — ctrl+c to abort" "$barw"
 }
 
+_ui_progress_geom() { # sets PG_W PG_H PG_TOP PG_LEFT PG_INNER from the live size
+    ui_size
+    PG_W=64; PG_H=7
+    (( PG_W > UI_COLS - 6 )) && PG_W=$(( UI_COLS - 6 ))
+    (( PG_W < 44 )) && PG_W=44
+    PG_TOP=$(( (UI_ROWS - PG_H) / 2 + 1 )); (( PG_TOP < 1 )) && PG_TOP=1
+    PG_LEFT=$(( (UI_COLS - PG_W) / 2 + 1 )); (( PG_LEFT < 1 )) && PG_LEFT=1
+    PG_INNER=$(( PG_W - 2 ))
+}
+
 ui_progress() {
-    local title=$1 pct=0 label='starting…' line rest
+    local title=$1 pct=0 label='starting…' line rest key='' last=''
+    local lastpct='' lastlabel=''
+    local PG_W PG_H PG_TOP PG_LEFT PG_INNER
 
     if ! ui_available; then
         while IFS= read -r line; do
@@ -883,31 +898,48 @@ ui_progress() {
         return 0
     fi
 
-    ui_size
-    local w=64 h=7
-    (( w > UI_COLS - 6 )) && w=$(( UI_COLS - 6 ))
-    (( w < 44 )) && w=44
-    local top=$(( (UI_ROWS - h) / 2 + 1 )); (( top < 1 )) && top=1
-    local left=$(( (UI_COLS - w) / 2 + 1 )); (( left < 1 )) && left=1
-    local inner=$(( w - 2 ))
+    # Re-read the terminal size on every tick: on Termux (and SSH apps) closing
+    # the on-screen keyboard resizes the window and would otherwise leave the
+    # progress panel at a stale position.
+    while :; do
+        if IFS= read -r -t 0.3 line; then
+            if [[ $line == P\ * ]]; then
+                rest=${line#P }
+                pct=${rest%% *}
+                label=${rest#* }
+                [[ $label == "$pct" ]] && label=''
+                [[ $pct =~ ^[0-9]+$ ]] || pct=0
+                (( pct > 100 )) && pct=100
+            fi
+        else
+            (( $? <= 128 )) && break
+        fi
 
-    ui_screen_begin
-    ui_blank_panel "$top" "$left" "$h" "$w"
-    ui_border "$top" "$left" "$h" "$w"
-    ui_title "$top" "$left" "$w" "$title"
-
-    while IFS= read -r line; do
-        [[ $line == P\ * ]] || continue
-        rest=${line#P }
-        pct=${rest%% *}
-        label=${rest#* }
-        [[ $label == "$pct" ]] && label=''
-        [[ $pct =~ ^[0-9]+$ ]] || pct=0
-        (( pct > 100 )) && pct=100
-        _ui_progress_draw "$top" "$left" "$inner" "$pct" "$label"
+        _ui_progress_geom
+        key="$UI_ROWS|$UI_COLS"
+        if [[ $key != "$last" ]]; then
+            ui_screen_begin
+            ui_blank_panel "$PG_TOP" "$PG_LEFT" "$PG_H" "$PG_W"
+            ui_border "$PG_TOP" "$PG_LEFT" "$PG_H" "$PG_W"
+            ui_title "$PG_TOP" "$PG_LEFT" "$PG_W" "$title"
+            last=$key
+            lastpct=''; lastlabel=''
+        fi
+        if [[ $pct != "$lastpct" || $label != "$lastlabel" || -z $lastpct ]]; then
+            _ui_progress_draw "$PG_TOP" "$PG_LEFT" "$PG_INNER" "$pct" "$label"
+            lastpct=$pct; lastlabel=$label
+        fi
     done
 
-    _ui_progress_draw "$top" "$left" "$inner" 100 "done"
+    _ui_progress_geom
+    key="$UI_ROWS|$UI_COLS"
+    if [[ $key != "$last" ]]; then
+        ui_screen_begin
+        ui_blank_panel "$PG_TOP" "$PG_LEFT" "$PG_H" "$PG_W"
+        ui_border "$PG_TOP" "$PG_LEFT" "$PG_H" "$PG_W"
+        ui_title "$PG_TOP" "$PG_LEFT" "$PG_W" "$title"
+    fi
+    _ui_progress_draw "$PG_TOP" "$PG_LEFT" "$PG_INNER" 100 "done"
     sleep 0.2
     ui_screen_end
     return 0

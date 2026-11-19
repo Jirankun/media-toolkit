@@ -46,6 +46,7 @@ source "$SCRIPT_DIR/lib/setup"
 
 case ${1:-} in
     -h|--help)
+        mtk_banner
         cat <<'EOF'
 Media Toolkit — batch media conversion, compression and repair.
 
@@ -59,6 +60,7 @@ Dependencies: bash 4+, ffmpeg, ImageMagick (install from the Setup screen).
 EOF
         exit 0 ;;
     -v|--version)
+        mtk_banner
         printf '%s %s\n' "$MTK_NAME" "$MTK_VERSION"
         exit 0 ;;
 esac

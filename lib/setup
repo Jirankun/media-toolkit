@@ -7,7 +7,10 @@ _PM_LABEL=''
 _PM_PACKAGES=()
 
 pm_detect() {
-    if command -v apt-get >/dev/null 2>&1; then
+    if [[ -n ${TERMUX_VERSION:-} || ${PREFIX:-} == *com.termux* ]] || command -v termux-setup-storage >/dev/null 2>&1; then
+        _PM=termux; _PM_LABEL='pkg · Termux'
+        _PM_PACKAGES=(ffmpeg imagemagick libjpeg-turbo)
+    elif command -v apt-get >/dev/null 2>&1; then
         _PM=apt; _PM_LABEL='apt · Debian / Ubuntu / Mint'
         _PM_PACKAGES=(ffmpeg imagemagick libjpeg-turbo-progs)
     elif command -v dnf >/dev/null 2>&1; then
@@ -40,8 +43,9 @@ pm_command() { # -> array in PM_CMD
         zypper) PM_CMD=(zypper --non-interactive install "${_PM_PACKAGES[@]}") ;;
         apk)    PM_CMD=(apk add "${_PM_PACKAGES[@]}") ;;
         brew)   PM_CMD=(brew install "${_PM_PACKAGES[@]}") ;;
+        termux) PM_CMD=(pkg install -y "${_PM_PACKAGES[@]}") ;;
     esac
-    if (( EUID != 0 )) && [[ $_PM != brew && $_PM != '' ]]; then
+    if (( EUID != 0 )) && [[ $_PM != brew && $_PM != termux && $_PM != '' ]]; then
         if command -v sudo >/dev/null 2>&1; then
             PM_CMD=(sudo "${PM_CMD[@]}")
         else
@@ -50,11 +54,110 @@ pm_command() { # -> array in PM_CMD
     fi
 }
 
+_deps_cmd() { # timeout wrapper, check only
+    if command -v timeout >/dev/null 2>&1; then
+        timeout 12 "$@"
+    else
+        "$@"
+    fi
+}
+
+_deps_pkg_list() { # "label|package" lines for the current package manager
+    case $_PM in
+        apt)    printf '%s\n' 'ffmpeg|ffmpeg' 'imagemagick|imagemagick' 'jpegtran|libjpeg-turbo-progs' ;;
+        termux) printf '%s\n' 'ffmpeg|ffmpeg' 'imagemagick|imagemagick' 'jpegtran|libjpeg-turbo' ;;
+        dnf)    printf '%s\n' 'ffmpeg|ffmpeg' 'imagemagick|ImageMagick' 'jpegtran|libjpeg-turbo-utils' ;;
+        pacman) printf '%s\n' 'ffmpeg|ffmpeg' 'imagemagick|imagemagick' 'jpegtran|libjpeg-turbo' ;;
+        zypper) printf '%s\n' 'ffmpeg|ffmpeg' 'imagemagick|ImageMagick' 'jpegtran|libjpeg-turbo' ;;
+        apk)    printf '%s\n' 'ffmpeg|ffmpeg' 'imagemagick|imagemagick' 'jpegtran|libjpeg-turbo-utils' ;;
+        brew)   printf '%s\n' 'ffmpeg|ffmpeg' 'imagemagick|imagemagick' 'jpegtran|jpeg-turbo' ;;
+    esac
+}
+
+_deps_installed_ver() { # package -> installed package version
+    case $_PM in
+        apt|termux)
+            dpkg-query -W -f='${Status}\t${Version}' "$1" 2>/dev/null \
+                | awk -F'\t' '$1 == "install ok installed" { print $2 }' ;;
+        pacman) pacman -Q "$1" 2>/dev/null | awk '{ print $2 }' ;;
+        dnf|zypper) rpm -q --qf '%{VERSION}-%{RELEASE}' "$1" 2>/dev/null | grep -v 'not installed' ;;
+        apk) apk info -v "$1" 2>/dev/null | head -n1 | sed "s/^$1-//" ;;
+        brew) brew list --versions "$1" 2>/dev/null | awk '{ print $2 }' ;;
+    esac
+}
+
+# Check only: reads the local package database, never installs or upgrades.
+_deps_scan() {
+    local raw label pkg inst ver
+    raw=$(mktemp "${TMPDIR:-/tmp}/mtk.XXXXXX") || return 1
+
+    case $_PM in
+        apt|termux) _deps_cmd apt list --upgradable > "$raw" 2>/dev/null ;;
+        pacman) _deps_cmd pacman -Qu > "$raw" 2>/dev/null ;;
+        dnf) _deps_cmd dnf -C -q check-update > "$raw" 2>/dev/null ;;
+        zypper) _deps_cmd zypper -q list-updates > "$raw" 2>/dev/null ;;
+        apk) _deps_cmd apk version -l '<' > "$raw" 2>/dev/null ;;
+        brew) _deps_cmd brew outdated --verbose > "$raw" 2>/dev/null ;;
+    esac
+
+    while IFS='|' read -r label pkg; do
+        [[ -n $pkg ]] || continue
+        inst=$(_deps_installed_ver "$pkg")
+        ver=''
+        case $_PM in
+            apt|termux)
+                ver=$(awk -v p="$pkg/" 'index($0, p) == 1 { s=$0; sub(/^[^ ]+ /, "", s); sub(/[ \t].*/, "", s); print s; exit }' "$raw") ;;
+            pacman)
+                ver=$(awk -v p="$pkg" '$1 == p { print $4; exit }' "$raw") ;;
+            dnf)
+                ver=$(awk -v p="$pkg" 'index($1, p ".") == 1 { print $2; exit }' "$raw") ;;
+            zypper)
+                ver=$(awk -F'|' -v p="$pkg" '{ gsub(/^ +| +$/, "", $3); gsub(/^ +| +$/, "", $5); if ($3 == p) { print $5; exit } }' "$raw") ;;
+            apk)
+                ver=$(awk -v p="$pkg-" 'index($0, p) == 1 { s=$0; sub(/^.*< /, "", s); print s; exit }' "$raw") ;;
+            brew)
+                ver=$(awk -v p="$pkg" '$1 == p { for (i = 1; i <= NF; i++) if ($i == "<") { print $(i + 1); exit } }' "$raw") ;;
+        esac
+        [[ -n $inst ]] || inst='tidak terpasang'
+        [[ $ver == "$inst" ]] && ver=''
+        printf '%s|%s|%s\n' "$label" "$inst" "$ver"
+    done < <(_deps_pkg_list)
+
+    rm -f -- "$raw"
+}
+
+_deps_scan_spinner() { # output file
+    local out=$1 pid i=0
+    local -a frames=('|' '/' '-' '\\')
+
+    if ! ui_available; then
+        _deps_scan > "$out"
+        return 0
+    fi
+
+    _deps_scan > "$out" &
+    pid=$!
+    while kill -0 "$pid" 2>/dev/null; do
+        ui_move 1 1
+        printf '%s%s%s Memeriksa paket…' "$UI_ACC" "${frames[i]}" "$UI_RESET"
+        i=$(( (i + 1) % 4 ))
+        sleep 0.12
+    done
+    wait "$pid" 2>/dev/null
+
+    ui_move 1 1
+    printf '%s%*s%s' "$UI_BASE" 28 '' "$UI_RESET"
+}
+
 deps_status_view() {
     pm_detect
     pm_command
-    local tmp
+    local tmp scan
     tmp=$(mktemp "${TMPDIR:-/tmp}/mtk.XXXXXX") || return 1
+    scan=$(mktemp "${TMPDIR:-/tmp}/mtk.XXXXXX") || return 1
+    if [[ ${MTK_NO_UPDATE:-0} != 1 ]]; then
+        _deps_scan_spinner "$scan"
+    fi
     {
         printf 'Required tools\n'
         printf '%s\n\n' "$(ui_fill 64 "$B_H")"
@@ -71,12 +174,27 @@ deps_status_view() {
         if (( ${#PM_CMD[@]} )); then
             printf '  install command: %s\n' "${PM_CMD[*]}"
         fi
+        printf '\nPackage versions\n'
+        printf '%s\n\n' "$(ui_fill 64 "$B_H")"
+        if [[ ${MTK_NO_UPDATE:-0} == 1 ]]; then
+            printf '  skipped (MTK_NO_UPDATE=1)\n'
+        else
+            local label inst avail
+            while IFS='|' read -r label inst avail; do
+                if [[ -n $avail ]]; then
+                    printf '  %-12s %-24s → %s tersedia\n' "$label" "$inst" "$avail"
+                else
+                    printf '  %-12s %s\n' "$label" "$inst"
+                fi
+            done < "$scan"
+            printf '\n  source: %s · checked %s\n' "${_PM_LABEL:-unknown}" "$(date '+%Y-%m-%d %H:%M')"
+        fi
         printf '\n  Required: ffmpeg (video/audio), ImageMagick (images).\n'
         printf '  Optional: jpegtran (JPEG repair), untrunc (MP4 repair).\n'
         printf '\n  Press q to close.\n'
     } > "$tmp"
     ui_pager "Dependency status" "$tmp"
-    rm -f -- "$tmp"
+    rm -f -- "$tmp" "$scan"
 }
 
 install_dependencies() {
@@ -92,9 +210,11 @@ install_dependencies() {
     local need=()
     [[ -z $FFMPEG ]] && need+=(ffmpeg)
     [[ -z $MAGICK ]] && need+=(ImageMagick)
+    local rootnote='This needs root (sudo).'
+    [[ $_PM == termux ]] && rootnote='Termux installs packages inside its own prefix; no root needed.'
     if (( ${#need[@]} > 0 )); then
         ui_confirm "Install dependencies" \
-            $'Missing: '"${need[*]}"$'\n\nPackage manager: '"$_PM_LABEL"$'\nCommand:\n  '"${PM_CMD[*]}"$'\n\nThis needs root (sudo). Continue?' || return 1
+            $'Missing: '"${need[*]}"$'\n\nPackage manager: '"$_PM_LABEL"$'\nCommand:\n  '"${PM_CMD[*]}"$'\n\n'"$rootnote"$' Continue?' || return 1
     else
         ui_confirm "Install dependencies" \
             $'The essentials are already installed.\n\nRe-install/refresh via:\n  '"${PM_CMD[*]}"$' ?' || return 1
@@ -152,6 +272,7 @@ install_launcher() {
         mkdir -p "$dest" || { ui_msg "Install launcher" "Could not create $dest"; return 1; }
         local -a extras=()
         [[ -f $SCRIPT_DIR/version ]] && extras+=("$SCRIPT_DIR/version")
+        [[ -f $SCRIPT_DIR/ascii-installer ]] && extras+=("$SCRIPT_DIR/ascii-installer")
         cp -a -- "$entry" "$SCRIPT_DIR/lib" "${extras[@]}" "$dest/" \
             || { ui_msg "Install launcher" "Copy failed."; return 1; }
         chmod +x "$dest/$entry_name"
