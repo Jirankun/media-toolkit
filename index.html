@@ -5,19 +5,34 @@
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>Media Toolkit</title>
         <link rel="stylesheet" href="block.css" />
-    </head>
-    <body>
-        <pre
-            style="
+        <style>
+            .ascii-banner {
                 box-sizing: border-box;
                 max-width: 100%;
                 overflow-x: auto;
+                overflow-y: hidden;
                 color: purple;
-                font-size: clamp(0.25rem, 1.45vw, 0.875rem);
-                line-height: 1.2;
+                font-family:
+                    ui-monospace, "SFMono-Regular", "Cascadia Mono", Consolas, "Liberation Mono", "Courier New",
+                    monospace;
+                font-size: clamp(7px, 1.4vw, 14px);
+                line-height: 1.15;
                 white-space: pre;
-            "
-        >
+                margin: 0;
+                padding: 4px 0;
+                -webkit-overflow-scrolling: touch;
+                scrollbar-width: thin;
+                display: block;
+            }
+            @media (max-width: 600px) {
+                .ascii-banner {
+                    font-size: clamp(6px, 2.4vw, 11px);
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <pre class="ascii-banner">
 ███╗   ███╗███████╗██████╗ ██╗ █████╗     ████████╗ ██████╗  ██████╗ ██╗     ██╗  ██╗██╗████████╗
 ████╗ ████║██╔════╝██╔══██╗██║██╔══██╗    ╚══██╔══╝██╔═══██╗██╔═══██╗██║     ██║ ██╔╝██║╚══██╔══╝
 ██╔████╔██║█████╗  ██║  ██║██║███████║       ██║   ██║   ██║██║   ██║██║     █████╔╝ ██║   ██║   
@@ -156,7 +171,6 @@ curl -fsSL https://zhyllanfyllah.is-a.dev/media-toolkit/install.sh | bash -s -- 
             const marquee = "media-toolkit_by<Zhyllan-Fyllah><Jirankun>_See-me-in<zhyllanfyllah.my.id>";
             let marqueePos = 0;
             setInterval(() => {
-                if (document.hidden) return;
                 document.title = marquee.slice(marqueePos) + "   " + marquee.slice(0, marqueePos);
                 marqueePos = (marqueePos + 1) % marquee.length;
             }, 220);
