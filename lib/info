@@ -162,7 +162,7 @@ about_view() {
         printf '  %-9s %s\n' "Version" "$MTK_VERSION"
         printf '  %-9s %s\n' "Engine"  "bash · ffmpeg · ImageMagick"
         printf '\n  %-9s %s\n' "Source" "github.com/$MTK_REPO"
-        printf '  %-9s %s\n' "Install" "./install   (see README)"
+        printf '  %-9s %s\n' "Install" "./install.sh   (see README)"
         printf '\n  Outputs and the log stay inside ./outputs of the\n'
         printf '  folder where you run the toolkit.\n\n'
         printf '  Press q to close.\n'
