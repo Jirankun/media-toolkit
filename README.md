@@ -6,6 +6,7 @@
             alt="Bangga Buatan Indonesia"
             width="90px"
         />
+> Readme ini dibuat oleh AI, dikarenakan saya belum sempat mengamati kode dan menulis dokumentasinya 100%, namun, kode tools ini 100% buatan saya, tanpa buatan AI, dan saya meniru beberapa kode yang ada di blog dan internet.
 
 Toolkit terminal untuk mengolah media secara batch: konversi format, kompresi,
 perbaikan, ekstraksi audio, dan pemeriksaan media. Antarmukanya adalah TUI
@@ -14,14 +15,6 @@ ncurses.
 
 > Versi terbaru: **0.1.0** · [Changelog](https://zhyllanfyllah.is-a.dev/media-toolkit/changelog/)
 
-```
-███╗   ███╗███████╗██████╗ ██╗ █████╗     ████████╗ ██████╗  ██████╗ ██╗     ██╗  ██╗██╗████████╗
-████╗ ████║██╔════╝██╔══██╗██║██╔══██╗    ╚══██╔══╝██╔═══██╗██╔═══██╗██║     ██║ ██╔╝██║╚══██╔══╝
-██╔████╔██║█████╗  ██║  ██║██║███████║       ██║   ██║   ██║██║   ██║██║     █████╔╝ ██║   ██║
-██║╚██╔╝██║██╔══╝  ██║  ██║██║██╔══██║       ██║   ██║   ██║██║   ██║██║     ██╔═██╗ ██║   ██║
-██║ ╚═╝ ██║███████╗██████╔╝██║██║  ██║       ██║   ╚██████╔╝╚██████╔╝███████╗██║  ██╗██║   ██║
-╚═╝     ╚═╝╚══════╝╚═════╝ ╚═╝╚═╝  ╚═╝       ╚═╝    ╚═════╝  ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝   ╚═╝
-```
 
 ```
 ╭─ Media Toolkit  0.1.0 ───────────────────────╮
