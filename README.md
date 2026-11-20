@@ -1,4 +1,11 @@
+
 # Media Toolkit
+
+<img
+            src="https://cdn.zhyllanfyllah.my.id/cdn/public/assets/bangga-indo/dark/bangga-buatan-indonesia.svg"
+            alt="Bangga Buatan Indonesia"
+            width="90px"
+        />
 
 Toolkit terminal untuk mengolah media secara batch: konversi format, kompresi,
 perbaikan, ekstraksi audio, dan pemeriksaan media. Antarmukanya adalah TUI
