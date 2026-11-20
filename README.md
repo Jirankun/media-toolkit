@@ -2,7 +2,7 @@
 # Media Toolkit
 
 <img
-            src="https://cdn.zhyllanfyllah.my.id/cdn/public/assets/bangga-indo/dark/bangga-buatan-indonesia.svg"
+            src="https://cdn.zhyllanfyllah.my.id/cdn/public/assets/bangga-indo/white/bangga-buatan-indonesia.svg"
             alt="Bangga Buatan Indonesia"
             width="90px"
         />
